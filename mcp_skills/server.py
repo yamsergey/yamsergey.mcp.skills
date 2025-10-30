@@ -37,7 +37,7 @@ class SkillsServer:
         self.server.list_tools()(self._list_tools_handler)
         self.server.call_tool()(self._call_tool_handler)
 
-    def _list_tools_handler(self) -> list[Tool]:
+    async def _list_tools_handler(self) -> list[Tool]:
         """List all available tools (skills)"""
         tools = []
 
