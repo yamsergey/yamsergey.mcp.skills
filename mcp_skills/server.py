@@ -9,7 +9,7 @@ from mcp.server import Server
 from mcp.types import (
     Tool,
     TextContent,
-    ToolResult,
+    CallToolResult,
 )
 import mcp.server.stdio
 
@@ -120,7 +120,7 @@ class SkillsServer:
             ),
         ]
 
-    async def call_tool(self, name: str, arguments: dict) -> ToolResult:
+    async def call_tool(self, name: str, arguments: dict) -> CallToolResult:
         """Execute a tool (skill or management operation)"""
         try:
             # Handle management tools
@@ -135,12 +135,12 @@ class SkillsServer:
                 return await self._handle_read_skill(name, arguments)
 
         except SecurityError as e:
-            return ToolResult(
+            return CallToolResult(
                 content=[TextContent(type="text", text=f"Error: {str(e)}")],
                 isError=True,
             )
         except Exception as e:
-            return ToolResult(
+            return CallToolResult(
                 content=[
                     TextContent(
                         type="text",
@@ -150,7 +150,7 @@ class SkillsServer:
                 isError=True,
             )
 
-    async def _handle_read_skill(self, skill_name: str, arguments: dict) -> ToolResult:
+    async def _handle_read_skill(self, skill_name: str, arguments: dict) -> CallToolResult:
         """Handle skill reading"""
         content = self.skill_manager.read_skill(skill_name)
         output_format = arguments.get("format", "raw")
@@ -165,12 +165,12 @@ class SkillsServer:
         else:
             text_content = content
 
-        return ToolResult(
+        return CallToolResult(
             content=[TextContent(type="text", text=text_content)],
             isError=False,
         )
 
-    async def _handle_list_skills(self, arguments: dict) -> ToolResult:
+    async def _handle_list_skills(self, arguments: dict) -> CallToolResult:
         """Handle listing skills"""
         skills = self.skill_manager.list_skills()
         result = {
@@ -180,12 +180,12 @@ class SkillsServer:
                 for name, metadata in skills.items()
             },
         }
-        return ToolResult(
+        return CallToolResult(
             content=[TextContent(type="text", text=json.dumps(result, indent=2))],
             isError=False,
         )
 
-    async def _handle_create_skill(self, arguments: dict) -> ToolResult:
+    async def _handle_create_skill(self, arguments: dict) -> CallToolResult:
         """Handle skill creation"""
         name = arguments.get("name")
         description = arguments.get("description")
@@ -202,12 +202,12 @@ class SkillsServer:
             "metadata": metadata.to_dict(),
             "path": str(metadata.file_path),
         }
-        return ToolResult(
+        return CallToolResult(
             content=[TextContent(type="text", text=json.dumps(result, indent=2))],
             isError=False,
         )
 
-    async def _handle_update_skill(self, arguments: dict) -> ToolResult:
+    async def _handle_update_skill(self, arguments: dict) -> CallToolResult:
         """Handle skill update"""
         name = arguments.get("name")
         if not name:
@@ -225,7 +225,7 @@ class SkillsServer:
             "message": f"Skill '{name}' updated successfully",
             "metadata": metadata.to_dict(),
         }
-        return ToolResult(
+        return CallToolResult(
             content=[TextContent(type="text", text=json.dumps(result, indent=2))],
             isError=False,
         )
