@@ -64,25 +64,44 @@ class SkillManager:
             self._scan_directory(self.project_skills_dir, "project")
 
     def _scan_directory(self, directory: Path, location: str) -> None:
-        """Scan a directory for skill files"""
+        """Scan a directory for skill files (recursively)"""
         try:
-            for file_path in directory.glob("*.md"):
+            # First try to find SKILL.md files in subdirectories (Anthropic agent skills format)
+            for skill_file in directory.glob("*/SKILL.md"):
                 try:
-                    metadata = self._extract_metadata(file_path, location)
+                    # Use parent directory name as skill name for nested skills
+                    metadata = self._extract_metadata(skill_file, location, use_parent_name=True)
                     self._metadata_cache[metadata.name] = metadata
                 except Exception as e:
                     # Skip files with parse errors, log them
-                    print(f"Warning: Failed to parse skill {file_path}: {e}")
+                    print(f"Warning: Failed to parse skill {skill_file}: {e}")
+
+            # Also find top-level .md files (for flat skill directory structure)
+            # Skip common non-skill files
+            skip_files = {'README', 'THIRD_PARTY_NOTICES', 'agent_skills_spec', 'LICENSE', 'CHANGELOG'}
+            for file_path in directory.glob("*.md"):
+                # Skip if filename (without .md) is in skip list
+                if file_path.stem not in skip_files:
+                    try:
+                        metadata = self._extract_metadata(file_path, location)
+                        self._metadata_cache[metadata.name] = metadata
+                    except Exception as e:
+                        # Skip files with parse errors, log them
+                        print(f"Warning: Failed to parse skill {file_path}: {e}")
         except Exception as e:
             print(f"Warning: Failed to scan directory {directory}: {e}")
 
-    def _extract_metadata(self, file_path: Path, location: str) -> SkillMetadata:
+    def _extract_metadata(self, file_path: Path, location: str, use_parent_name: bool = False) -> SkillMetadata:
         """Extract metadata from a skill file"""
         with open(file_path, "r", encoding="utf-8") as f:
             post = frontmatter.load(f)
 
-        # Use filename (without .md) as skill name
-        skill_name = file_path.stem
+        # Use parent directory name as skill name if use_parent_name is True (for SKILL.md files)
+        # Otherwise use filename (without .md)
+        if use_parent_name:
+            skill_name = file_path.parent.name
+        else:
+            skill_name = file_path.stem
 
         # Extract description from frontmatter or content
         description = post.metadata.get("description", "")
