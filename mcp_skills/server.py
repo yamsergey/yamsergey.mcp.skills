@@ -1,9 +1,13 @@
-"""MCP Server implementation"""
+"""MCP Server implementation
+
+This server exposes skills as MCP tools via stdio interface.
+"""
 
 import sys
 import json
 from typing import Any
 import argparse
+import asyncio
 
 from mcp.server import Server
 from mcp.types import (
@@ -21,17 +25,23 @@ class SkillsServer:
     """MCP Server for exposing skills as tools"""
 
     def __init__(self, user_skills_dir=None, project_skills_dir=None):
-        self.server = Server("mcp-skills")
         self.skill_manager = SkillManager(user_skills_dir, project_skills_dir)
 
-        # Register handlers
-        self.server.list_tools()(self.list_tools)
-        self.server.call_tool()(self.call_tool)
+        self.server = Server(
+            name="mcp-skills",
+            version="0.1.0",
+            instructions="MCP server for exposing Anthropic skills as tools"
+        )
 
-    def list_tools(self) -> list[Tool]:
+        # Register handlers - using direct decorator pattern
+        self.server.list_tools()(self._list_tools_handler)
+        self.server.call_tool()(self._call_tool_handler)
+
+    def _list_tools_handler(self) -> list[Tool]:
         """List all available tools (skills)"""
         tools = []
 
+        # Add skill tools
         for skill_name, metadata in self.skill_manager.list_skills().items():
             tool = Tool(
                 name=skill_name,
@@ -120,7 +130,7 @@ class SkillsServer:
             ),
         ]
 
-    async def call_tool(self, name: str, arguments: dict) -> CallToolResult:
+    async def _call_tool_handler(self, name: str, arguments: dict) -> CallToolResult:
         """Execute a tool (skill or management operation)"""
         try:
             # Handle management tools
@@ -233,7 +243,16 @@ class SkillsServer:
     async def run(self):
         """Run the server"""
         async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-            await self.server.run(read_stream, write_stream, lambda: None)
+            # Simple object with required attributes for initialization
+            class InitOptions:
+                server_name = "mcp-skills"
+                server_version = "0.1.0"
+                website_url = None
+                icons = None
+                instructions = "MCP server for exposing Anthropic skills as tools"
+                capabilities = {}
+
+            await self.server.run(read_stream, write_stream, InitOptions())
 
 
 def main():
@@ -258,8 +277,6 @@ def main():
         user_skills_dir=args.user_skills,
         project_skills_dir=args.project_skills,
     )
-
-    import asyncio
 
     asyncio.run(server.run())
 
