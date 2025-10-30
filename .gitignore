@@ -34,3 +34,4 @@ env/
 *.swo
 *~
 .DS_Store
+.claude/skills/
