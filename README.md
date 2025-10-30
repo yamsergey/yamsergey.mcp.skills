@@ -26,17 +26,37 @@ An MCP (Model Context Protocol) server that exposes [Anthropic Claude Code Skill
 - Python 3.8+
 - pip
 
-### Setup
+### From GitHub (Recommended for latest development version)
 
 ```bash
-# Clone or download the project
-cd mcp-skills
+# Install directly from GitHub
+pip install git+https://github.com/yamsergey/yamsergey.mcp.skills.git
+
+# Or install a specific version/tag
+pip install git+https://github.com/yamsergey/yamsergey.mcp.skills.git@v0.1.0
+
+# Or install from a specific branch
+pip install git+https://github.com/yamsergey/yamsergey.mcp.skills.git@main
+```
+
+### From Source (Development)
+
+```bash
+# Clone the repository
+git clone https://github.com/yamsergey/yamsergey.mcp.skills.git
+cd yamsergey.mcp.skills
 
 # Install in development mode
 pip install -e .
 
 # Or install with dev dependencies
 pip install -e ".[dev]"
+```
+
+### From PyPI (Once published)
+
+```bash
+pip install mcp-skills
 ```
 
 ## Usage

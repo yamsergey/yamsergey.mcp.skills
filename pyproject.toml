@@ -8,10 +8,32 @@ version = "0.1.0"
 description = "MCP server exposing Anthropic skills as tools"
 readme = "README.md"
 requires-python = ">=3.8"
+authors = [
+    {name = "Sergey Yamshchikov", email = "yamsergey@gmail.com"}
+]
+license = {text = "MIT"}
+keywords = ["mcp", "model-context-protocol", "skills", "anthropic", "claude"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+]
 dependencies = [
     "mcp>=0.1.0",
     "python-frontmatter>=1.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/yamsergey/yamsergey.mcp.skills"
+Repository = "https://github.com/yamsergey/yamsergey.mcp.skills.git"
+Issues = "https://github.com/yamsergey/yamsergey.mcp.skills/issues"
 
 [project.optional-dependencies]
 dev = [
