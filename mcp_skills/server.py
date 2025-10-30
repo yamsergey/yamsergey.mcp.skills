@@ -14,6 +14,8 @@ from mcp.types import (
     Tool,
     TextContent,
     CallToolResult,
+    ServerCapabilities,
+    ToolsCapability,
 )
 import mcp.server.stdio
 
@@ -250,7 +252,8 @@ class SkillsServer:
                 website_url = None
                 icons = None
                 instructions = "MCP server for exposing Anthropic skills as tools"
-                capabilities = {}
+                # Declare that this server supports tools
+                capabilities = ServerCapabilities(tools=ToolsCapability())
 
             await self.server.run(read_stream, write_stream, InitOptions())
 
