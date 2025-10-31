@@ -47,7 +47,7 @@ git clone https://github.com/yamsergey/yamsergey.mcp.skills.git
 cd yamsergey.mcp.skills
 
 # Install in development mode
-pip install -e .
+pip install -e . // or pipx install -e . if pip can't install it on your environment
 
 # Or install with dev dependencies
 pip install -e ".[dev]"
