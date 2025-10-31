@@ -204,7 +204,7 @@ class SkillManager:
         Create a new skill file.
 
         Args:
-            skill_name: Name for the skill
+            skill_name: Name for the skill (can include nested paths like "category/my-skill")
             description: Description of the skill
             content: Full markdown content (without frontmatter)
             location: "user" or "project"
@@ -217,18 +217,29 @@ class SkillManager:
         """
         validate_skill_name(skill_name)
 
-        # Determine target directory
+        # Determine base directory
         if location == "user":
-            target_dir = self.user_skills_dir
+            base_dir = self.user_skills_dir
         elif location == "project":
-            target_dir = self.project_skills_dir
+            base_dir = self.project_skills_dir
         else:
             raise SecurityError(f"Invalid location: {location}")
 
-        # Create directory if needed
+        # Handle nested paths (e.g., "category/my-skill")
+        parts = skill_name.split("/")
+        file_name = f"{parts[-1]}.md"
+        relative_dir = "/".join(parts[:-1]) if len(parts) > 1 else ""
+
+        # Resolve and validate the final path to prevent directory traversal
+        if relative_dir:
+            target_dir = resolve_and_validate_path(base_dir, relative_dir)
+        else:
+            target_dir = base_dir
+
+        # Create directory structure if needed
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        file_path = target_dir / f"{skill_name}.md"
+        file_path = target_dir / file_name
 
         if file_path.exists():
             raise SecurityError(f"Skill already exists: {skill_name}")

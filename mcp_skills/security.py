@@ -77,7 +77,7 @@ def validate_skill_name(name: str) -> None:
     Validate that a skill name is safe.
 
     Args:
-        name: Skill name to validate
+        name: Skill name to validate (can include nested paths like "category/my-skill")
 
     Raises:
         SecurityError: If name is invalid
@@ -88,8 +88,12 @@ def validate_skill_name(name: str) -> None:
     if len(name) > 255:
         raise SecurityError("Skill name too long (max 255 chars)")
 
-    # Allow alphanumeric, hyphens, underscores
-    if not all(c.isalnum() or c in "-_" for c in name):
+    # Prevent path traversal attempts
+    if ".." in name or name.startswith("/") or name.endswith("/"):
+        raise SecurityError("Skill name contains invalid path patterns")
+
+    # Allow alphanumeric, hyphens, underscores, and forward slashes for nesting
+    if not all(c.isalnum() or c in "-_/" for c in name):
         raise SecurityError("Skill name contains invalid characters")
 
 

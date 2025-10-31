@@ -203,6 +203,8 @@ Full markdown content describing the skill, its usage, examples, etc.
 - `keywords` (optional): Searchable keywords for discovery
 - `use_case` (optional): Primary use case or scenario
 
+**Nested skills**: Skills can be organized in nested directories using forward slashes in the skill name (e.g., `utils/helpers/my-skill.md`). Nested directories are automatically created when skills are created.
+
 ## Available Tools
 
 ### Original Mode: Skill Tools
@@ -283,7 +285,9 @@ List all available skills with metadata.
 Create a new skill file.
 
 **Parameters:**
-- `name` (required): Skill name (alphanumeric, hyphens, underscores only)
+- `name` (required): Skill name (alphanumeric, hyphens, underscores, and forward slashes for nesting)
+  - Examples: `my-skill`, `category/my-skill`, `category/subcategory/my-skill`
+  - Nested directories are automatically created if they don't exist
 - `description` (required): Skill description
 - `content` (required): Full markdown content
 - `location` (optional): `user` or `project` (default: `project`)
@@ -399,9 +403,17 @@ metadata = manager.get_skill_metadata("skill-name")
 # Read full skill content
 content = manager.read_skill("skill-name")
 
-# Create a new skill
+# Create a new skill (flat)
 metadata = manager.create_skill(
     skill_name="my-skill",
+    description="Description",
+    content="# Markdown content",
+    location="project"
+)
+
+# Create a nested skill (directories created automatically)
+metadata = manager.create_skill(
+    skill_name="category/my-skill",
     description="Description",
     content="# Markdown content",
     location="project"
