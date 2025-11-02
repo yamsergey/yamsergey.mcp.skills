@@ -1,0 +1,269 @@
+---
+name: Neovim and LazyVim Setup for Termux
+description: Set up Neovim with LazyVim starter configuration, Catppuccin Mocha theme (with italics disabled), Mason language server manager, and Kotlin LSP integration. Use when initializing Neovim editor or updating plugin configuration.
+---
+
+# Neovim and LazyVim Setup for Termux
+
+## Overview
+This skill installs and configures:
+- **Neovim** - Modern vim-based text editor
+- **LazyVim** - Starter configuration with lazy.nvim plugin manager
+- **Catppuccin Mocha** - Color theme (italics disabled for Termux)
+- **Mason** - Language server manager
+- **Kotlin LSP** - Integration with kotlin-language-server
+
+## Prerequisites
+- Termux environment
+- Git installed
+- Neovim 0.9+ installed (via `pkg install neovim`)
+- Kotlin LSP available in PATH (optional, for Kotlin development)
+
+## Installation Steps
+
+### Step 1: Install Neovim
+```bash
+pkg install -y neovim
+nvim --version
+```
+
+### Step 2: Install LazyVim Starter
+```bash
+git clone https://github.com/LazyVim/starter ~/.config/nvim
+rm -rf ~/.config/nvim/.git
+```
+
+This provides:
+- lazy.nvim plugin manager
+- Default config structure
+- Common plugins pre-configured
+
+### Step 3: Create Plugin Overrides
+
+**~/.config/nvim/lua/plugins/lazyvim.lua**:
+```lua
+return {
+  {
+    "LazyVim/LazyVim",
+    opts = {
+      colorscheme = "catppuccin",
+    },
+  },
+}
+```
+
+**~/.config/nvim/lua/plugins/theme.lua**:
+```lua
+return {
+  {
+    "catppuccin/nvim",
+    name = "catppuccin",
+    priority = 1000,
+    config = function()
+      require("catppuccin").setup({
+        flavour = "mocha",
+        no_italic = true,
+      })
+      vim.cmd.colorscheme("catppuccin")
+      vim.cmd("highlight! link @function.builtin @function")
+      -- Disable italics on all highlight groups
+      for group, _ in pairs(vim.api.nvim_get_hl(0, { link = false })) do
+        vim.cmd(string.format("highlight! %s cterm=none gui=none", group))
+      end
+    end,
+  },
+}
+```
+
+### Step 4: Install Mason for Language Servers
+Inside Neovim:
+```vim
+:MasonInstall lua-language-server
+```
+
+### Step 5: Add Kotlin LSP Configuration
+
+**~/.config/nvim/lua/plugins/kotlin.lua**:
+```lua
+return {
+  {
+    "mfussenegger/nvim-lspconfig",
+    opts = {
+      servers = {
+        kotlin_language_server = {
+          cmd = { "kotlin-lsp" },
+          root_dir = function(fname)
+            return require("lspconfig").util.root_pattern("build.gradle", "settings.gradle", ".git")(fname)
+          end,
+        },
+      },
+    },
+  },
+}
+```
+
+### Step 6: Launch and Verify
+```bash
+nvim
+```
+
+Inside Neovim:
+```vim
+:LazyHealth          " Check plugin status
+:Mason               " Check language servers
+:colorscheme catppuccin  " Verify theme loads
+```
+
+## Directory Structure
+
+```
+~/.config/nvim/
+├── init.lua                  (main config, auto-generated)
+├── lazy-lock.json            (plugin lock file, auto-generated)
+├── lua/
+│   ├── config/
+│   │   ├── lazy.lua
+│   │   ├── options.lua
+│   │   ├── autocmds.lua
+│   │   └── keymaps.lua
+│   └── plugins/
+│       ├── spec1.lua         (auto-required by lazy.nvim)
+│       ├── lazyvim.lua       (override LazyVim defaults)
+│       ├── theme.lua         (Catppuccin with italics disabled)
+│       └── kotlin.lua        (Kotlin LSP configuration)
+└── stylua.toml              (Lua formatter config)
+```
+
+## Theme Configuration
+
+### Why Disable Italics?
+Termux with non-monospace fonts can display italics poorly or with incorrect spacing. Disabling italics:
+- Maintains code readability
+- Avoids visual glitches
+- Still uses other styles (bold, underline)
+
+### Catppuccin Mocha Colors
+- Background: `#1e1e2e` (dark)
+- Foreground: `#cdd6f4` (light)
+- Accent colors for syntax highlighting
+
+## Language Server Integration
+
+### Lua Language Server
+- Installed via Mason
+- Provides: Code completion, diagnostics, formatting
+- Configuration: Auto-configured by nvim-lspconfig
+
+### Kotlin Language Server
+- External tool (must be in PATH)
+- Requires: kotlin-lsp command available
+- Setup: See `kotlin-lsp-setup` skill
+- Provides: Code completion, diagnostics, navigation for Kotlin
+
+## Keybindings
+
+LazyVim provides extensive defaults. Common ones:
+- `<Space>` - Leader key (most LazyVim commands start here)
+- `<Space>ff` - Find files
+- `<Space>fg` - Find grep
+- `<Space>gs` - Git status
+- `gd` - Go to definition
+- `gr` - Go to references
+- `K` - Show documentation
+
+See LazyVim docs for full keybinding list: https://www.lazyvim.org/
+
+## Customization
+
+### Add More Plugins
+Create new files in `~/.config/nvim/lua/plugins/`:
+```lua
+-- ~/.config/nvim/lua/plugins/my-plugin.lua
+return {
+  {
+    "author/plugin-name",
+    config = function()
+      -- setup code
+    end,
+  },
+}
+```
+
+### Change Color Scheme
+Edit `~/.config/nvim/lua/plugins/lazyvim.lua`:
+```lua
+opts = {
+  colorscheme = "tokyonight",  -- different theme
+},
+```
+
+### Add Editor Options
+Edit `~/.config/nvim/lua/config/options.lua` (auto-generated by LazyVim)
+
+### Add Key Mappings
+Edit `~/.config/nvim/lua/config/keymaps.lua` (auto-generated by LazyVim)
+
+## Troubleshooting
+
+### Theme not loading
+- Run `:Lazy` to see if catppuccin plugin loaded
+- Check plugin status: `:LazyHealth`
+- Reload: `:colorscheme catppuccin`
+
+### Italics still showing
+- Verify theme.lua file is in ~/.config/nvim/lua/plugins/
+- Reload: `:source ~/.config/nvim/lua/plugins/theme.lua`
+- Restart Neovim
+
+### Kotlin LSP not working
+- Verify kotlin-lsp in PATH: `which kotlin-lsp`
+- Check if available: See `kotlin-lsp-setup` skill
+- Run `:Mason` and check kotlin_language_server status
+
+### Slow startup
+- Run `:LazyProfile` to identify slow plugins
+- Check plugin load conditions
+- Consider lazy-loading plugins with `lazy = true`
+
+## File Setup Commands
+
+Quick setup script:
+```bash
+# Create plugin directory
+mkdir -p ~/.config/nvim/lua/plugins
+
+# Create theme.lua
+nvim ~/.config/nvim/lua/plugins/theme.lua
+
+# Create lazyvim.lua
+nvim ~/.config/nvim/lua/plugins/lazyvim.lua
+
+# Create kotlin.lua
+nvim ~/.config/nvim/lua/plugins/kotlin.lua
+
+# Install Lua LSP
+nvim +MasonInstall\ lua-language-server +qa
+```
+
+## Dependencies
+
+**Requires first**:
+- Neovim 0.9+ installed
+- Git installed
+- 0xProto Nerd Font configured in Termux (for proper glyph rendering)
+
+**Enables**:
+- Code editing with modern plugin ecosystem
+- Language server support (Lua, Kotlin, etc.)
+- Syntax highlighting with Catppuccin theme
+- Integration with LazyVim community
+
+**Optional enhances**:
+- `kotlin-lsp-setup` - Adds full Kotlin LSP integration
+- `termux-font-setup` - Installs 0xProto Nerd Font for proper glyph display
+
+## Related Skills
+- `termux-font-setup` - Configures 0xProto Nerd Font for proper rendering
+- `kotlin-lsp-setup` - Installs kotlin-language-server
+- `tmux-setup` - Configures tmux to work with Neovim
+- `bash-environment-config` - Sets EDITOR/VISUAL to nvim
