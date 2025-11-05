@@ -70,7 +70,7 @@ def test_create_skill(temp_skills_dir):
     manager = SkillManager(project_skills_dir=str(temp_skills_dir))
 
     metadata = manager.create_skill(
-        name="new-skill",
+        skill_name="new-skill",
         description="A newly created skill",
         content="# New Skill\n\nContent here",
         location="project",
@@ -97,7 +97,7 @@ def test_create_skill_duplicate(temp_skills_dir):
 
     with pytest.raises(SecurityError, match="Skill already exists"):
         manager.create_skill(
-            name="test-skill",
+            skill_name="test-skill",
             description="Duplicate",
             content="# Content",
             location="project",
@@ -110,7 +110,7 @@ def test_create_skill_invalid_name(temp_skills_dir):
 
     with pytest.raises(SecurityError):
         manager.create_skill(
-            name="invalid@name",
+            skill_name="invalid@name",
             description="Test",
             content="# Content",
         )
@@ -121,7 +121,7 @@ def test_update_skill(temp_skills_dir):
     manager = SkillManager(project_skills_dir=str(temp_skills_dir))
 
     metadata = manager.update_skill(
-        name="test-skill",
+        skill_name="test-skill",
         description="Updated description",
         content="# Updated\n\nNew content here",
     )
@@ -139,7 +139,7 @@ def test_update_skill_not_found(temp_skills_dir):
     manager = SkillManager(project_skills_dir=str(temp_skills_dir))
 
     with pytest.raises(SecurityError, match="Skill not found"):
-        manager.update_skill(name="nonexistent", description="New description")
+        manager.update_skill(skill_name="nonexistent", description="New description")
 
 
 def test_multiple_skills_discovery(temp_skills_dir):

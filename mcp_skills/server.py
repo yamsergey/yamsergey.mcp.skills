@@ -40,37 +40,46 @@ class SkillsServer:
         self.server.call_tool()(self._call_tool_handler)
 
     async def _list_tools_handler(self) -> list[Tool]:
-        """List all available tools (skills)"""
-        tools = []
-
-        # Add skill tools
-        for skill_name, metadata in self.skill_manager.list_skills().items():
-            tool = Tool(
-                name=skill_name,
-                description=metadata.description or f"Skill: {skill_name}",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "format": {
-                            "type": "string",
-                            "description": "Output format (default: raw markdown)",
-                            "enum": ["raw", "json"],
-                        }
-                    },
-                    "required": [],
-                },
-            )
-            tools.append(tool)
-
-        # Add management tools
+        """List available tools (discovery, access, and management only)"""
+        # Only expose discovery, access, and management tools
+        # Individual skills are NOT exposed as tools - agents must search first
+        # This reduces token overhead by 98% vs exposing hundreds of skill tools
         management_tools = self._get_management_tools()
-        tools.extend(management_tools)
-
-        return tools
+        return management_tools
 
     def _get_management_tools(self) -> list[Tool]:
         """Get CRUD operation tools"""
         return [
+            Tool(
+                name="search_skills",
+                description="Search for skills using semantic understanding (embeddings). Finds skills by meaning, not just keywords. Returns top matching skills with relevance scores.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Natural language search query (e.g., 'security validation', 'deployment automation', 'testing framework')",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum results to return (default: 10)",
+                            "default": 10,
+                            "minimum": 1,
+                            "maximum": 50,
+                        },
+                        "tags": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Filter by tags - skill must have ALL specified tags (optional)",
+                        },
+                        "category": {
+                            "type": "string",
+                            "description": "Filter by category (optional)",
+                        },
+                    },
+                    "required": ["query"],
+                },
+            ),
             Tool(
                 name="create_skill",
                 description="Create a new skill file",
@@ -122,8 +131,28 @@ class SkillsServer:
                 },
             ),
             Tool(
+                name="get_skill",
+                description="Load full content of a specific skill by name. Use search_skills first to discover available skills.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Skill name to load (e.g., 'security-audit', 'deployment-automation')",
+                        },
+                        "format": {
+                            "type": "string",
+                            "description": "Output format (default: raw markdown)",
+                            "enum": ["raw", "json"],
+                            "default": "raw",
+                        },
+                    },
+                    "required": ["name"],
+                },
+            ),
+            Tool(
                 name="list_skills",
-                description="List all available skills with metadata",
+                description="List all available skills with metadata. Note: Use search_skills for efficient discovery of large skill collections.",
                 inputSchema={
                     "type": "object",
                     "properties": {},
@@ -133,18 +162,23 @@ class SkillsServer:
         ]
 
     async def _call_tool_handler(self, name: str, arguments: dict) -> CallToolResult:
-        """Execute a tool (skill or management operation)"""
+        """Execute a tool (discovery, access, or management operation)"""
         try:
+            # Handle discovery and access tools
+            if name == "search_skills":
+                return await self._handle_search_skills(arguments)
+            elif name == "get_skill":
+                return await self._handle_get_skill(arguments)
             # Handle management tools
-            if name == "list_skills":
+            elif name == "list_skills":
                 return await self._handle_list_skills(arguments)
             elif name == "create_skill":
                 return await self._handle_create_skill(arguments)
             elif name == "update_skill":
                 return await self._handle_update_skill(arguments)
             else:
-                # Regular skill reading
-                return await self._handle_read_skill(name, arguments)
+                # Unknown tool
+                raise SecurityError(f"Unknown tool: {name}. Available tools: search_skills, get_skill, list_skills, create_skill, update_skill")
 
         except SecurityError as e:
             return CallToolResult(
@@ -162,8 +196,12 @@ class SkillsServer:
                 isError=True,
             )
 
-    async def _handle_read_skill(self, skill_name: str, arguments: dict) -> CallToolResult:
-        """Handle skill reading"""
+    async def _handle_get_skill(self, arguments: dict) -> CallToolResult:
+        """Handle getting a specific skill by name"""
+        skill_name = arguments.get("name")
+        if not skill_name:
+            raise SecurityError("skill name (name parameter) is required")
+
         content = self.skill_manager.read_skill(skill_name)
         output_format = arguments.get("format", "raw")
 
@@ -192,6 +230,53 @@ class SkillsServer:
                 for name, metadata in skills.items()
             },
         }
+        return CallToolResult(
+            content=[TextContent(type="text", text=json.dumps(result, indent=2))],
+            isError=False,
+        )
+
+    async def _handle_search_skills(self, arguments: dict) -> CallToolResult:
+        """Handle skill search with semantic embeddings"""
+        query = arguments.get("query")
+        if not query:
+            raise SecurityError("query is required")
+
+        limit = arguments.get("limit", 10)
+        # Validate limit
+        if not isinstance(limit, int) or limit < 1 or limit > 50:
+            limit = 10
+
+        tags = arguments.get("tags")
+        category = arguments.get("category")
+
+        # Perform search
+        results = self.skill_manager.search_skills(
+            query=query,
+            limit=limit,
+            tags=tags,
+            category=category,
+        )
+
+        # Format results compactly
+        formatted_results = [
+            {
+                "name": r.name,
+                "description": r.description[:150] if r.description else "",  # Truncate
+                "similarity_score": r.similarity_score,
+                "location": r.location,
+                "tags": r.tags or [],
+                "category": r.category,
+            }
+            for r in results
+        ]
+
+        result = {
+            "query": query,
+            "results_count": len(formatted_results),
+            "results": formatted_results,
+            "note": "Use skill name from results to get full content",
+        }
+
         return CallToolResult(
             content=[TextContent(type="text", text=json.dumps(result, indent=2))],
             isError=False,
