@@ -47,7 +47,7 @@ class SkillsServer:
 
         self.server = Server(
             name="mcp-skills",
-            version="0.1.0",
+            version="0.1.1",
             instructions="MCP server for exposing Anthropic skills as tools"
         )
 
@@ -388,7 +388,7 @@ class SkillsServer:
             # Simple object with required attributes for initialization
             class InitOptions:
                 server_name = "mcp-skills"
-                server_version = "0.1.0"
+                server_version = "0.1.1"
                 website_url = None
                 icons = None
                 instructions = "MCP server for exposing Anthropic skills as tools"
