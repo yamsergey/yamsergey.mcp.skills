@@ -31,6 +31,7 @@ class SkillsServer:
         user_skills_dir=None,
         project_skills_dir=None,
         enable_search_api=False,
+        search_tool_description=None,
     ):
         """
         Initialize MCP server.
@@ -41,9 +42,13 @@ class SkillsServer:
             enable_search_api: If True, use discovery API (search_skills + get_skill).
                              If False, expose all skills as individual tools (original behavior).
                              Default: False (backward compatible)
+            search_tool_description: Custom description for search_skills tool.
+                                   If None, uses default description.
+                                   Only applies in search API mode.
         """
         self.skill_manager = SkillManager(user_skills_dir, project_skills_dir)
         self.enable_search_api = enable_search_api
+        self.search_tool_description = search_tool_description
 
         self.server = Server(
             name="mcp-skills",
@@ -60,7 +65,7 @@ class SkillsServer:
         if self.enable_search_api:
             # Search API mode: only expose discovery, access, and management tools
             # This reduces token overhead by 98% vs exposing hundreds of skill tools
-            management_tools = self._get_management_tools()
+            management_tools = self._get_management_tools(self.search_tool_description)
             return management_tools
         else:
             # Original mode: expose all skills as individual tools plus management tools
@@ -86,17 +91,27 @@ class SkillsServer:
                 tools.append(tool)
 
             # Add management tools
-            management_tools = self._get_management_tools()
+            management_tools = self._get_management_tools(self.search_tool_description)
             tools.extend(management_tools)
 
             return tools
 
-    def _get_management_tools(self) -> list[Tool]:
-        """Get CRUD operation tools"""
+    def _get_management_tools(self, search_description=None) -> list[Tool]:
+        """
+        Get CRUD operation tools.
+
+        Args:
+            search_description: Custom description for search_skills tool.
+                              If None, uses default description.
+        """
+        # Use custom description if provided, otherwise use default
+        default_search_description = "Search for skills using semantic understanding (embeddings). Finds skills by meaning, not just keywords. Returns top matching skills with relevance scores."
+        search_description = search_description or default_search_description
+
         return [
             Tool(
                 name="search_skills",
-                description="Search for skills using semantic understanding (embeddings). Finds skills by meaning, not just keywords. Returns top matching skills with relevance scores.",
+                description=search_description,
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -420,6 +435,13 @@ def main():
         help="Enable search API mode (discovery + access pattern). "
              "If disabled, exposes all skills as individual tools (default: disabled for backward compatibility)",
     )
+    parser.add_argument(
+        "--search-description",
+        type=str,
+        default=None,
+        help="Custom description for the search_skills tool (optional). "
+             "Only applies in search API mode.",
+    )
 
     args = parser.parse_args()
 
@@ -427,6 +449,7 @@ def main():
         user_skills_dir=args.user_skills,
         project_skills_dir=args.project_skills,
         enable_search_api=args.search_api,
+        search_tool_description=args.search_description,
     )
 
     asyncio.run(server.run())
