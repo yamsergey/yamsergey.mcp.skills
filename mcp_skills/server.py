@@ -22,6 +22,7 @@ import mcp.server.stdio
 
 from .skill_manager import SkillManager
 from .security import SecurityError
+from .mcp_aggregator import MCPAggregator, MCPTool
 
 
 class SkillsServer:
@@ -33,6 +34,7 @@ class SkillsServer:
         project_skills_dir=None,
         enable_search_api=False,
         search_tool_description=None,
+        mcp_config_path=None,
     ):
         """
         Initialize MCP server.
@@ -49,10 +51,14 @@ class SkillsServer:
                                    - A file path: description is read from the file
                                    - None: uses default description
                                    Only applies in search API mode.
+            mcp_config_path: Path to mcp-servers.json config file to aggregate tools from other MCPs.
+                           If provided, tools from configured MCP servers will be discovered and exposed as skills.
         """
         self.skill_manager = SkillManager(user_skills_dir, project_skills_dir)
         self.enable_search_api = enable_search_api
         self.search_tool_description = self._load_description(search_tool_description)
+        self.mcp_config_path = mcp_config_path
+        self.mcp_aggregator = None  # Initialized in async context
 
         self.server = Server(
             name="mcp-skills",
@@ -121,6 +127,20 @@ class SkillsServer:
                     },
                 )
                 tools.append(tool)
+
+            # Add MCP-aggregated tools
+            if self.mcp_aggregator:
+                for tool_id, mcp_tool in self.mcp_aggregator.list_tools().items():
+                    tool = Tool(
+                        name=tool_id,  # Format: "server_name::tool_name"
+                        description=mcp_tool.description or f"Tool from {mcp_tool.source_server}",
+                        inputSchema=mcp_tool.input_schema or {
+                            "type": "object",
+                            "properties": {},
+                            "required": []
+                        },
+                    )
+                    tools.append(tool)
 
             # Add management tools
             management_tools = self._get_management_tools(self.search_tool_description)
@@ -278,6 +298,9 @@ class SkillsServer:
                     return await self._handle_create_skill(arguments)
                 elif name == "update_skill":
                     return await self._handle_update_skill(arguments)
+                elif "::" in name and self.mcp_aggregator:
+                    # MCP-aggregated tool (format: "server_name::tool_name")
+                    return await self._handle_mcp_tool(name, arguments)
                 else:
                     # Assume it's a skill name in original mode
                     return await self._handle_get_skill({"name": name, **arguments})
@@ -429,20 +452,57 @@ class SkillsServer:
             isError=False,
         )
 
+    async def _handle_mcp_tool(self, tool_id: str, arguments: dict) -> CallToolResult:
+        """
+        Handle execution of a tool from an aggregated MCP server.
+
+        Args:
+            tool_id: Tool ID in format "server_name::tool_name"
+            arguments: Tool arguments
+
+        Returns:
+            Tool execution result
+        """
+        try:
+            result = await self.mcp_aggregator.call_tool(tool_id, arguments)
+
+            return CallToolResult(
+                content=[TextContent(type="text", text=json.dumps(result, indent=2) if isinstance(result, dict) else str(result))],
+                isError=False,
+            )
+        except Exception as e:
+            return CallToolResult(
+                content=[TextContent(type="text", text=f"Error calling MCP tool {tool_id}: {str(e)}")],
+                isError=True,
+            )
+
     async def run(self):
         """Run the server"""
-        async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-            # Simple object with required attributes for initialization
-            class InitOptions:
-                server_name = "mcp-skills"
-                server_version = "0.1.1"
-                website_url = None
-                icons = None
-                instructions = "MCP server for exposing Anthropic skills as tools"
-                # Declare that this server supports tools
-                capabilities = ServerCapabilities(tools=ToolsCapability())
+        # Initialize MCP aggregator if config path provided
+        if self.mcp_config_path:
+            try:
+                self.mcp_aggregator = MCPAggregator(self.mcp_config_path)
+                await self.mcp_aggregator.load_from_config()
+            except Exception as e:
+                print(f"Warning: Failed to load MCP config: {e}")
 
-            await self.server.run(read_stream, write_stream, InitOptions())
+        try:
+            async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
+                # Simple object with required attributes for initialization
+                class InitOptions:
+                    server_name = "mcp-skills"
+                    server_version = "0.1.1"
+                    website_url = None
+                    icons = None
+                    instructions = "MCP server for exposing Anthropic skills as tools"
+                    # Declare that this server supports tools
+                    capabilities = ServerCapabilities(tools=ToolsCapability())
+
+                await self.server.run(read_stream, write_stream, InitOptions())
+        finally:
+            # Cleanup MCP connections
+            if self.mcp_aggregator:
+                await self.mcp_aggregator.disconnect_all()
 
 
 def main():
@@ -476,6 +536,14 @@ def main():
              "If a file path is provided, the description is read from the file. "
              "Only applies in search API mode.",
     )
+    parser.add_argument(
+        "--mcp-config",
+        type=str,
+        default=None,
+        help="Path to mcp-servers.json config file to aggregate tools from other MCP servers. "
+             "If provided, tools from configured MCP servers will be discovered and exposed as skills. "
+             "Supports standard MCP config format (command, args, env fields).",
+    )
 
     args = parser.parse_args()
 
@@ -484,6 +552,7 @@ def main():
         project_skills_dir=args.project_skills,
         enable_search_api=args.search_api,
         search_tool_description=args.search_description,
+        mcp_config_path=args.mcp_config,
     )
 
     asyncio.run(server.run())
