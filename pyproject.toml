@@ -36,10 +36,19 @@ Repository = "https://github.com/yamsergey/yamsergey.mcp.skills.git"
 Issues = "https://github.com/yamsergey/yamsergey.mcp.skills/issues"
 
 [project.optional-dependencies]
+embeddings = [
+    "sentence-transformers>=2.2.0",
+    "chromadb>=0.4.0",
+]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21.0",
+    "sentence-transformers>=2.2.0",
+    "chromadb>=0.4.0",
 ]
+
+[tool.setuptools]
+packages = ["mcp_skills"]
 
 [project.scripts]
 mcp-skills = "mcp_skills.server:main"

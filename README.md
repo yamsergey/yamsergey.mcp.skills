@@ -4,6 +4,8 @@ An MCP (Model Context Protocol) server that exposes [Anthropic Claude Code Skill
 
 ## Features
 
+- **Dual Mode Operation**: Choose between original (all skills as tools) or search API (token-efficient discovery)
+- **Semantic Search**: Optional embeddings-based search for intelligent skill discovery
 - **Skills as MCP Tools**: Automatically discovers and exposes skills as callable MCP tools
 - **Metadata Caching**: Efficiently caches skill metadata while lazily loading full content
 - **CRUD Operations**: Create, read, and update skills through MCP tools
@@ -59,9 +61,34 @@ pip install -e ".[dev]"
 pip install mcp-skills
 ```
 
+### Installing with Semantic Search Support
+
+To use semantic search in Search API mode, install with embeddings support:
+
+```bash
+# Install with embeddings (semantic search)
+pip install -e ".[embeddings]"
+
+# Install with all dev dependencies including embeddings
+pip install -e ".[dev]"
+
+# Note: Embeddings are optional. The system works with keyword-based search fallback if embeddings unavailable.
+```
+
+**Embeddings Setup:**
+- Model: `sentence-transformers/all-MiniLM-L6-v2` (22MB, 384-dimensional)
+- Vector Database: Chroma (local, persistent)
+- Cache Location: `~/.cache/mcp-skills`
+
 ## Usage
 
 ### Running the Server
+
+The server supports two modes:
+
+#### Mode 1: Original Mode (Default - Backward Compatible)
+
+Exposes all skills as individual MCP tools. Best for small skill collections.
 
 ```bash
 # Using default directories (~/.claude/skills and ./.claude/skills)
@@ -71,10 +98,31 @@ mcp-skills
 mcp-skills --user-skills /path/to/user/skills --project-skills /path/to/project/skills
 ```
 
+#### Mode 2: Search API Mode (Token Efficient)
+
+Exposes only discovery and access tools. Best for large skill collections (100+, 1000+ skills). Implements semantic search-first approach based on [Anthropic's research](https://www.anthropic.com/engineering/code-execution-with-mcp).
+
+```bash
+# Enable search API mode
+mcp-skills --search-api
+
+# With custom directories
+mcp-skills --search-api --user-skills /path/to/user/skills --project-skills /path/to/project/skills
+```
+
+**Mode Comparison:**
+
+| Aspect | Original Mode | Search API Mode |
+|--------|---------------|-----------------|
+| Tools Exposed | All skills + 5 management | 5 tools only |
+| Best For | < 50 skills | 100+ skills |
+| Token Overhead | ~75,000 tokens | ~1,350 tokens |
+| Discovery | Direct tool invocation | Semantic search first |
+| CRUD Operations | ✓ All supported | ✓ All supported |
+
 ### Configuring in Claude Code
 
-To use this MCP server with Claude Code, add it to your `.claude/mcp-servers.json`:
-
+#### Original Mode
 ```json
 {
   "mcp-skills": {
@@ -89,9 +137,27 @@ To use this MCP server with Claude Code, add it to your `.claude/mcp-servers.jso
 }
 ```
 
+#### Search API Mode
+```json
+{
+  "mcp-skills": {
+    "command": "mcp-skills",
+    "args": [
+      "--search-api",
+      "--user-skills",
+      "~/.claude/skills",
+      "--project-skills",
+      "./.claude/skills"
+    ]
+  }
+}
+```
+
 ## Skill Format
 
 Skills are markdown files with YAML frontmatter:
+
+### Basic Format
 
 ```markdown
 ---
@@ -112,22 +178,87 @@ Full markdown content describing the skill, its usage, examples, etc.
 Example usage here...
 ```
 
+### Extended Format (Recommended for Search API Mode)
+
+```markdown
+---
+description: Brief description of what this skill does
+tags: ["security", "audit"]              # Optional: categorization tags
+category: "security"                     # Optional: primary category
+keywords: ["vulnerability", "scanning"]  # Optional: searchable keywords
+use_case: "Identify security issues"     # Optional: primary use case
+---
+
+# Skill Name
+
+Full markdown content describing the skill, its usage, examples, etc.
+```
+
 **File naming**: Use lowercase with hyphens (e.g., `my-awesome-skill.md`)
+
+**Frontmatter Fields:**
+- `description` (required): Brief description
+- `tags` (optional): List of categorization tags for filtering
+- `category` (optional): Primary category for hierarchical organization
+- `keywords` (optional): Searchable keywords for discovery
+- `use_case` (optional): Primary use case or scenario
 
 ## Available Tools
 
-### Skill Reading
+### Original Mode: Skill Tools
 
-Each discovered skill becomes an MCP tool. When invoked, it returns the full markdown content.
+In original mode, each discovered skill becomes an MCP tool that returns its full markdown content.
+
+**Skill Tool Parameters:**
+- `format` (optional): Output format - `raw` (default) or `json`
+
+**Skill Tool Returns:**
+- `raw` format: Full markdown content
+- `json` format: JSON object with skill name, content, and metadata
+
+### Search API Mode: Discovery & Access Tools
+
+#### `search_skills`
+
+Search for skills using semantic understanding (with optional keyword fallback).
 
 **Parameters:**
+- `query` (required): Natural language search query
+- `limit` (optional): Max results to return (default: 10, max: 50)
+- `tags` (optional): Filter by tags (all must match)
+- `category` (optional): Filter by category
+
+**Returns:**
+```json
+{
+  "query": "security validation",
+  "results_count": 3,
+  "results": [
+    {
+      "name": "security-audit",
+      "description": "Audit security configurations...",
+      "similarity_score": 0.95,
+      "tags": ["security", "audit"],
+      "category": "security",
+      "location": "project"
+    }
+  ]
+}
+```
+
+#### `get_skill`
+
+Load full content of a specific skill by name (discovered via `search_skills`).
+
+**Parameters:**
+- `name` (required): Skill name to load
 - `format` (optional): Output format - `raw` (default) or `json`
 
 **Returns:**
 - `raw` format: Full markdown content
 - `json` format: JSON object with skill name, content, and metadata
 
-### Management Tools
+### Management Tools (Both Modes)
 
 #### `list_skills`
 
