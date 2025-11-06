@@ -8,6 +8,7 @@ import json
 from typing import Any
 import argparse
 import asyncio
+from pathlib import Path
 
 from mcp.server import Server
 from mcp.types import (
@@ -43,12 +44,15 @@ class SkillsServer:
                              If False, expose all skills as individual tools (original behavior).
                              Default: False (backward compatible)
             search_tool_description: Custom description for search_skills tool.
-                                   If None, uses default description.
+                                   Can be either:
+                                   - A string: used directly as the description
+                                   - A file path: description is read from the file
+                                   - None: uses default description
                                    Only applies in search API mode.
         """
         self.skill_manager = SkillManager(user_skills_dir, project_skills_dir)
         self.enable_search_api = enable_search_api
-        self.search_tool_description = search_tool_description
+        self.search_tool_description = self._load_description(search_tool_description)
 
         self.server = Server(
             name="mcp-skills",
@@ -59,6 +63,34 @@ class SkillsServer:
         # Register handlers - using direct decorator pattern
         self.server.list_tools()(self._list_tools_handler)
         self.server.call_tool()(self._call_tool_handler)
+
+    def _load_description(self, description_input: str) -> str:
+        """
+        Load description from string or file.
+
+        Args:
+            description_input: Either a description string or path to a file
+
+        Returns:
+            The description string (or None if input is None)
+        """
+        if not description_input:
+            return None
+
+        # Try to treat it as a file path first
+        file_path = Path(description_input).expanduser()
+        if file_path.exists() and file_path.is_file():
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                    if content:
+                        return content
+            except Exception as e:
+                # If file reading fails, fall back to treating it as a string
+                print(f"Warning: Failed to read description file {file_path}: {e}")
+
+        # If not a file or file is empty, use as-is (treat as a string)
+        return description_input.strip() if isinstance(description_input, str) else None
 
     async def _list_tools_handler(self) -> list[Tool]:
         """List available tools based on configured mode"""
@@ -440,6 +472,8 @@ def main():
         type=str,
         default=None,
         help="Custom description for the search_skills tool (optional). "
+             "Can be either a string or path to a file. "
+             "If a file path is provided, the description is read from the file. "
              "Only applies in search API mode.",
     )
 
