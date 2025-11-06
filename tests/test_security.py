@@ -38,7 +38,7 @@ def test_resolve_and_validate_path_escape():
     with tempfile.TemporaryDirectory() as tmpdir:
         base = Path(tmpdir)
 
-        with pytest.raises(SecurityError, match="Path escapes base directory"):
+        with pytest.raises(SecurityError, match="Path traversal detected"):
             resolve_and_validate_path(str(base), "../..")
 
 

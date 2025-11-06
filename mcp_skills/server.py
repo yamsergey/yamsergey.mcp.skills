@@ -26,8 +26,24 @@ from .security import SecurityError
 class SkillsServer:
     """MCP Server for exposing skills as tools"""
 
-    def __init__(self, user_skills_dir=None, project_skills_dir=None):
+    def __init__(
+        self,
+        user_skills_dir=None,
+        project_skills_dir=None,
+        enable_search_api=False,
+    ):
+        """
+        Initialize MCP server.
+
+        Args:
+            user_skills_dir: Path to user skills directory
+            project_skills_dir: Path to project skills directory
+            enable_search_api: If True, use discovery API (search_skills + get_skill).
+                             If False, expose all skills as individual tools (original behavior).
+                             Default: False (backward compatible)
+        """
         self.skill_manager = SkillManager(user_skills_dir, project_skills_dir)
+        self.enable_search_api = enable_search_api
 
         self.server = Server(
             name="mcp-skills",
@@ -40,12 +56,40 @@ class SkillsServer:
         self.server.call_tool()(self._call_tool_handler)
 
     async def _list_tools_handler(self) -> list[Tool]:
-        """List available tools (discovery, access, and management only)"""
-        # Only expose discovery, access, and management tools
-        # Individual skills are NOT exposed as tools - agents must search first
-        # This reduces token overhead by 98% vs exposing hundreds of skill tools
-        management_tools = self._get_management_tools()
-        return management_tools
+        """List available tools based on configured mode"""
+        if self.enable_search_api:
+            # Search API mode: only expose discovery, access, and management tools
+            # This reduces token overhead by 98% vs exposing hundreds of skill tools
+            management_tools = self._get_management_tools()
+            return management_tools
+        else:
+            # Original mode: expose all skills as individual tools plus management tools
+            tools = []
+
+            # Add skill tools
+            for skill_name, metadata in self.skill_manager.list_skills().items():
+                tool = Tool(
+                    name=skill_name,
+                    description=metadata.description or f"Skill: {skill_name}",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "format": {
+                                "type": "string",
+                                "description": "Output format (default: raw markdown)",
+                                "enum": ["raw", "json"],
+                            }
+                        },
+                        "required": [],
+                    },
+                )
+                tools.append(tool)
+
+            # Add management tools
+            management_tools = self._get_management_tools()
+            tools.extend(management_tools)
+
+            return tools
 
     def _get_management_tools(self) -> list[Tool]:
         """Get CRUD operation tools"""
@@ -164,21 +208,32 @@ class SkillsServer:
     async def _call_tool_handler(self, name: str, arguments: dict) -> CallToolResult:
         """Execute a tool (discovery, access, or management operation)"""
         try:
-            # Handle discovery and access tools
-            if name == "search_skills":
-                return await self._handle_search_skills(arguments)
-            elif name == "get_skill":
-                return await self._handle_get_skill(arguments)
-            # Handle management tools
-            elif name == "list_skills":
-                return await self._handle_list_skills(arguments)
-            elif name == "create_skill":
-                return await self._handle_create_skill(arguments)
-            elif name == "update_skill":
-                return await self._handle_update_skill(arguments)
+            if self.enable_search_api:
+                # Search API mode: handle discovery, access, and management tools
+                if name == "search_skills":
+                    return await self._handle_search_skills(arguments)
+                elif name == "get_skill":
+                    return await self._handle_get_skill(arguments)
+                elif name == "list_skills":
+                    return await self._handle_list_skills(arguments)
+                elif name == "create_skill":
+                    return await self._handle_create_skill(arguments)
+                elif name == "update_skill":
+                    return await self._handle_update_skill(arguments)
+                else:
+                    # Unknown tool
+                    raise SecurityError(f"Unknown tool: {name}. Available tools: search_skills, get_skill, list_skills, create_skill, update_skill")
             else:
-                # Unknown tool
-                raise SecurityError(f"Unknown tool: {name}. Available tools: search_skills, get_skill, list_skills, create_skill, update_skill")
+                # Original mode: handle all tools including individual skill names
+                if name == "list_skills":
+                    return await self._handle_list_skills(arguments)
+                elif name == "create_skill":
+                    return await self._handle_create_skill(arguments)
+                elif name == "update_skill":
+                    return await self._handle_update_skill(arguments)
+                else:
+                    # Assume it's a skill name in original mode
+                    return await self._handle_get_skill({"name": name, **arguments})
 
         except SecurityError as e:
             return CallToolResult(
@@ -358,12 +413,20 @@ def main():
         default=None,
         help="Path to project skills directory (default: ./.claude/skills)",
     )
+    parser.add_argument(
+        "--search-api",
+        action="store_true",
+        default=False,
+        help="Enable search API mode (discovery + access pattern). "
+             "If disabled, exposes all skills as individual tools (default: disabled for backward compatibility)",
+    )
 
     args = parser.parse_args()
 
     server = SkillsServer(
         user_skills_dir=args.user_skills,
         project_skills_dir=args.project_skills,
+        enable_search_api=args.search_api,
     )
 
     asyncio.run(server.run())
