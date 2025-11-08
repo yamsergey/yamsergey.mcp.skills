@@ -29,8 +29,7 @@ class SkillsServer:
 
     def __init__(
         self,
-        user_skills_dir=None,
-        project_skills_dir=None,
+        skills_paths=None,
         enable_search_api=False,
         search_tool_description=None,
     ):
@@ -38,8 +37,8 @@ class SkillsServer:
         Initialize MCP server.
 
         Args:
-            user_skills_dir: Path to user skills directory
-            project_skills_dir: Path to project skills directory
+            skills_paths: List of skill directory paths to scan.
+                         Defaults to [~/.claude/skills, ./.claude/skills] if not provided.
             enable_search_api: If True, use discovery API (search_skills + get_skill).
                              If False, expose all skills as individual tools (original behavior).
                              Default: False (backward compatible)
@@ -50,7 +49,7 @@ class SkillsServer:
                                    - None: uses default description
                                    Only applies in search API mode.
         """
-        self.skill_manager = SkillManager(user_skills_dir, project_skills_dir)
+        self.skill_manager = SkillManager(skills_paths)
         self.enable_search_api = enable_search_api
         self.search_tool_description = self._load_description(search_tool_description)
 
@@ -179,7 +178,7 @@ class SkillsServer:
                     "properties": {
                         "name": {
                             "type": "string",
-                            "description": "Skill name (alphanumeric, hyphens, underscores)",
+                            "description": "Skill name (alphanumeric, hyphens, underscores, and forward slashes for nesting)",
                         },
                         "description": {
                             "type": "string",
@@ -191,9 +190,7 @@ class SkillsServer:
                         },
                         "location": {
                             "type": "string",
-                            "description": "Where to create the skill",
-                            "enum": ["user", "project"],
-                            "default": "project",
+                            "description": "Path where to create the skill (must be one of configured skills_paths). Defaults to first configured path.",
                         },
                     },
                     "required": ["name", "description", "content"],
@@ -449,16 +446,12 @@ def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(description="MCP Skills Server")
     parser.add_argument(
-        "--user-skills",
+        "--skills-path",
         type=str,
-        default=None,
-        help="Path to user skills directory (default: ~/.claude/skills)",
-    )
-    parser.add_argument(
-        "--project-skills",
-        type=str,
-        default=None,
-        help="Path to project skills directory (default: ./.claude/skills)",
+        action="append",
+        dest="skills_paths",
+        help="Path to skills directory (can be specified multiple times). "
+             "Defaults to [~/.claude/skills, ./.claude/skills] if not provided.",
     )
     parser.add_argument(
         "--search-api",
@@ -480,8 +473,7 @@ def main():
     args = parser.parse_args()
 
     server = SkillsServer(
-        user_skills_dir=args.user_skills,
-        project_skills_dir=args.project_skills,
+        skills_paths=args.skills_paths,
         enable_search_api=args.search_api,
         search_tool_description=args.search_description,
     )

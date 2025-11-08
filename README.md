@@ -94,8 +94,8 @@ Exposes all skills as individual MCP tools. Best for small skill collections.
 # Using default directories (~/.claude/skills and ./.claude/skills)
 mcp-skills
 
-# Using custom directories
-mcp-skills --user-skills /path/to/user/skills --project-skills /path/to/project/skills
+# Using custom skill paths (can specify multiple)
+mcp-skills --skills-path /path/to/skills1 --skills-path /path/to/skills2
 ```
 
 #### Mode 2: Search API Mode (Token Efficient)
@@ -103,11 +103,11 @@ mcp-skills --user-skills /path/to/user/skills --project-skills /path/to/project/
 Exposes only discovery and access tools. Best for large skill collections (100+, 1000+ skills). Implements semantic search-first approach based on [Anthropic's research](https://www.anthropic.com/engineering/code-execution-with-mcp).
 
 ```bash
-# Enable search API mode
+# Enable search API mode with default directories
 mcp-skills --search-api
 
-# With custom directories
-mcp-skills --search-api --user-skills /path/to/user/skills --project-skills /path/to/project/skills
+# With custom skill paths (can specify multiple)
+mcp-skills --search-api --skills-path /path/to/skills1 --skills-path /path/to/skills2
 ```
 
 **Mode Comparison:**
@@ -122,16 +122,27 @@ mcp-skills --search-api --user-skills /path/to/user/skills --project-skills /pat
 
 ### Configuring in Claude Code
 
-#### Original Mode
+#### Original Mode (with default directories)
+```json
+{
+  "mcp-skills": {
+    "command": "mcp-skills"
+  }
+}
+```
+
+#### Original Mode (with custom skill paths)
 ```json
 {
   "mcp-skills": {
     "command": "mcp-skills",
     "args": [
-      "--user-skills",
+      "--skills-path",
       "~/.claude/skills",
-      "--project-skills",
-      "./.claude/skills"
+      "--skills-path",
+      "./.claude/skills",
+      "--skills-path",
+      "/path/to/additional/skills"
     ]
   }
 }
@@ -144,9 +155,9 @@ mcp-skills --search-api --user-skills /path/to/user/skills --project-skills /pat
     "command": "mcp-skills",
     "args": [
       "--search-api",
-      "--user-skills",
+      "--skills-path",
       "~/.claude/skills",
-      "--project-skills",
+      "--skills-path",
       "./.claude/skills"
     ]
   }
@@ -290,7 +301,7 @@ Create a new skill file.
   - Nested directories are automatically created if they don't exist
 - `description` (required): Skill description
 - `content` (required): Full markdown content
-- `location` (optional): `user` or `project` (default: `project`)
+- `location` (optional): Path where to create the skill. Must be one of the configured skills_paths. Defaults to first configured path if not specified.
 
 **Returns:**
 ```json
@@ -389,9 +400,16 @@ Main class for skill operations:
 ```python
 from mcp_skills.skill_manager import SkillManager
 
+# Using default paths (~/.claude/skills and ./.claude/skills)
+manager = SkillManager()
+
+# Using custom skill paths (list of paths)
 manager = SkillManager(
-    user_skills_dir="~/.claude/skills",
-    project_skills_dir="./.claude/skills"
+    skills_paths=[
+        "~/.claude/skills",
+        "./.claude/skills",
+        "/path/to/additional/skills"
+    ]
 )
 
 # List skills
@@ -408,7 +426,7 @@ metadata = manager.create_skill(
     skill_name="my-skill",
     description="Description",
     content="# Markdown content",
-    location="project"
+    location="/path/to/skills/dir"  # Must be one of configured paths
 )
 
 # Create a nested skill (directories created automatically)
@@ -416,7 +434,7 @@ metadata = manager.create_skill(
     skill_name="category/my-skill",
     description="Description",
     content="# Markdown content",
-    location="project"
+    location="/path/to/skills/dir"
 )
 
 # Update a skill

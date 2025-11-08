@@ -46,20 +46,26 @@ class SkillManager:
 
     def __init__(
         self,
-        user_skills_dir: Optional[str] = None,
-        project_skills_dir: Optional[str] = None,
+        skills_paths: Optional[List[str]] = None,
         enable_embeddings: bool = True,
     ):
         """
         Initialize skill manager.
 
         Args:
-            user_skills_dir: Path to user skills directory (defaults to ~/.claude/skills)
-            project_skills_dir: Path to project skills directory (defaults to ./.claude/skills)
+            skills_paths: List of skill directory paths to scan.
+                         Defaults to [~/.claude/skills, ./.claude/skills] if not provided.
+                         Each path is scanned and skills are indexed with their location.
             enable_embeddings: Enable semantic search with embeddings (default: True)
         """
-        self.user_skills_dir = Path(user_skills_dir or "~/.claude/skills").expanduser()
-        self.project_skills_dir = Path(project_skills_dir or "./.claude/skills")
+        # Use provided paths or default to user + project skills
+        if skills_paths is None:
+            skills_paths = [
+                "~/.claude/skills",
+                "./.claude/skills",
+            ]
+
+        self.skills_paths = [Path(p).expanduser() for p in skills_paths]
 
         # Metadata cache: skill_name -> SkillMetadata
         self._metadata_cache: Dict[str, SkillMetadata] = {}
@@ -78,13 +84,11 @@ class SkillManager:
         """Discover all available skills"""
         self._metadata_cache.clear()
 
-        # Discover user skills
-        if self.user_skills_dir.exists():
-            self._scan_directory(self.user_skills_dir, "user")
-
-        # Discover project skills
-        if self.project_skills_dir.exists():
-            self._scan_directory(self.project_skills_dir, "project")
+        # Discover skills from all configured paths
+        for skills_path in self.skills_paths:
+            if skills_path.exists():
+                # Use the path itself as the location identifier
+                self._scan_directory(skills_path, location=str(skills_path))
 
         # Index skills for semantic search after discovery
         self._index_skills_embeddings()
@@ -198,7 +202,7 @@ class SkillManager:
         skill_name: str,
         description: str,
         content: str,
-        location: str = "project",
+        location: Optional[str] = None,
     ) -> SkillMetadata:
         """
         Create a new skill file.
@@ -207,7 +211,8 @@ class SkillManager:
             skill_name: Name for the skill (can include nested paths like "category/my-skill")
             description: Description of the skill
             content: Full markdown content (without frontmatter)
-            location: "user" or "project"
+            location: Path where to create the skill. Defaults to first path in skills_paths.
+                     Must be one of the configured skills_paths or a subdirectory within one.
 
         Returns:
             SkillMetadata for the created skill
@@ -218,12 +223,15 @@ class SkillManager:
         validate_skill_name(skill_name)
 
         # Determine base directory
-        if location == "user":
-            base_dir = self.user_skills_dir
-        elif location == "project":
-            base_dir = self.project_skills_dir
+        if location is None:
+            # Default to the first configured skills path
+            base_dir = self.skills_paths[0] if self.skills_paths else Path("./.claude/skills")
         else:
-            raise SecurityError(f"Invalid location: {location}")
+            # Verify location is one of the configured paths
+            location_path = Path(location).expanduser()
+            if not any(location_path.samefile(p) if (location_path.exists() and p.exists()) else str(location_path) == str(p) for p in self.skills_paths):
+                raise SecurityError(f"Location must be one of configured skills paths: {self.skills_paths}")
+            base_dir = location_path
 
         # Handle nested paths (e.g., "category/my-skill")
         parts = skill_name.split("/")
