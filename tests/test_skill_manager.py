@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import frontmatter
 
-from mcp_skills.skill_manager import SkillManager, SkillMetadata
+from mcp_skills.skill_manager import SkillManager, SkillMetadata, SkillPath
 from mcp_skills.security import SecurityError
 
 
@@ -31,7 +31,7 @@ def temp_skills_dir():
 def test_skill_manager_init(temp_skills_dir):
     """Test skill manager initialization"""
     manager = SkillManager(
-        skills_paths=[str(temp_skills_dir)],
+        skills_paths=[SkillPath(nickname="test", path=str(temp_skills_dir), readonly=False)],
         enable_embeddings=False  # Disable embeddings for faster test
     )
     skills = manager.list_skills()
@@ -43,7 +43,7 @@ def test_skill_manager_init(temp_skills_dir):
 def test_skill_manager_metadata_extraction(temp_skills_dir):
     """Test metadata extraction from skill files"""
     manager = SkillManager(
-        skills_paths=[str(temp_skills_dir)],
+        skills_paths=[SkillPath(nickname="test", path=str(temp_skills_dir), readonly=False)],
         enable_embeddings=False
     )
     metadata = manager.get_skill_metadata("test-skill")
@@ -51,13 +51,13 @@ def test_skill_manager_metadata_extraction(temp_skills_dir):
     assert metadata is not None
     assert metadata.name == "test-skill"
     assert metadata.description == "A test skill"
-    assert metadata.location == str(temp_skills_dir)
+    assert metadata.location == "test"
 
 
 def test_read_skill(temp_skills_dir):
     """Test reading skill content"""
     manager = SkillManager(
-        skills_paths=[str(temp_skills_dir)],
+        skills_paths=[SkillPath(nickname="test", path=str(temp_skills_dir), readonly=False)],
         enable_embeddings=False
     )
     content = manager.read_skill("test-skill")
@@ -69,7 +69,7 @@ def test_read_skill(temp_skills_dir):
 def test_read_skill_not_found(temp_skills_dir):
     """Test reading non-existent skill"""
     manager = SkillManager(
-        skills_paths=[str(temp_skills_dir)],
+        skills_paths=[SkillPath(nickname="test", path=str(temp_skills_dir), readonly=False)],
         enable_embeddings=False
     )
 
@@ -80,7 +80,7 @@ def test_read_skill_not_found(temp_skills_dir):
 def test_create_skill(temp_skills_dir):
     """Test creating a new skill"""
     manager = SkillManager(
-        skills_paths=[str(temp_skills_dir)],
+        skills_paths=[SkillPath(nickname="test", path=str(temp_skills_dir), readonly=False)],
         enable_embeddings=False
     )
 
@@ -88,7 +88,7 @@ def test_create_skill(temp_skills_dir):
         skill_name="new-skill",
         description="A newly created skill",
         content="# New Skill\n\nContent here",
-        location=str(temp_skills_dir),
+        location="test",
     )
 
     assert metadata.name == "new-skill"
@@ -109,7 +109,7 @@ def test_create_skill(temp_skills_dir):
 def test_create_skill_duplicate(temp_skills_dir):
     """Test creating duplicate skill fails"""
     manager = SkillManager(
-        skills_paths=[str(temp_skills_dir)],
+        skills_paths=[SkillPath(nickname="test", path=str(temp_skills_dir), readonly=False)],
         enable_embeddings=False
     )
 
@@ -118,14 +118,14 @@ def test_create_skill_duplicate(temp_skills_dir):
             skill_name="test-skill",
             description="Duplicate",
             content="# Content",
-            location=str(temp_skills_dir),
+            location="test",
         )
 
 
 def test_create_skill_invalid_name(temp_skills_dir):
     """Test creating skill with invalid name"""
     manager = SkillManager(
-        skills_paths=[str(temp_skills_dir)],
+        skills_paths=[SkillPath(nickname="test", path=str(temp_skills_dir), readonly=False)],
         enable_embeddings=False
     )
 
@@ -134,13 +134,14 @@ def test_create_skill_invalid_name(temp_skills_dir):
             skill_name="invalid@name",
             description="Test",
             content="# Content",
+            location="test",
         )
 
 
 def test_update_skill(temp_skills_dir):
     """Test updating skill"""
     manager = SkillManager(
-        skills_paths=[str(temp_skills_dir)],
+        skills_paths=[SkillPath(nickname="test", path=str(temp_skills_dir), readonly=False)],
         enable_embeddings=False
     )
 
@@ -161,7 +162,7 @@ def test_update_skill(temp_skills_dir):
 def test_update_skill_not_found(temp_skills_dir):
     """Test updating non-existent skill"""
     manager = SkillManager(
-        skills_paths=[str(temp_skills_dir)],
+        skills_paths=[SkillPath(nickname="test", path=str(temp_skills_dir), readonly=False)],
         enable_embeddings=False
     )
 
@@ -182,7 +183,7 @@ def test_multiple_skills_discovery(temp_skills_dir):
             f.write(frontmatter.dumps(post))
 
     manager = SkillManager(
-        skills_paths=[str(temp_skills_dir)],
+        skills_paths=[SkillPath(nickname="test", path=str(temp_skills_dir), readonly=False)],
         enable_embeddings=False
     )
     skills = manager.list_skills()

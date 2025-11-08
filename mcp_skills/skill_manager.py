@@ -15,6 +15,28 @@ from .security import (
 
 
 @dataclass
+class SkillPath:
+    """Configuration for a skill directory path"""
+
+    nickname: str  # Short identifier for the path (e.g., "user", "project", "shared")
+    path: str  # File system path
+    readonly: bool = False  # Whether new skills can be created in this path
+
+    @property
+    def expanded_path(self) -> Path:
+        """Get the expanded absolute path"""
+        return Path(self.path).expanduser()
+
+    def to_dict(self) -> dict:
+        """Convert to JSON-serializable dict"""
+        return {
+            "nickname": self.nickname,
+            "path": self.path,
+            "readonly": self.readonly,
+        }
+
+
+@dataclass
 class SkillMetadata:
     """Metadata for a skill"""
 
@@ -46,26 +68,26 @@ class SkillManager:
 
     def __init__(
         self,
-        skills_paths: Optional[List[str]] = None,
+        skills_paths: Optional[List[SkillPath]] = None,
         enable_embeddings: bool = True,
     ):
         """
         Initialize skill manager.
 
         Args:
-            skills_paths: List of skill directory paths to scan.
-                         Defaults to [~/.claude/skills, ./.claude/skills] if not provided.
+            skills_paths: List of SkillPath config objects to scan.
+                         Defaults to [user: ~/.claude/skills, project: ./.claude/skills] if not provided.
                          Each path is scanned and skills are indexed with their location.
             enable_embeddings: Enable semantic search with embeddings (default: True)
         """
         # Use provided paths or default to user + project skills
         if skills_paths is None:
             skills_paths = [
-                "~/.claude/skills",
-                "./.claude/skills",
+                SkillPath(nickname="user", path="~/.claude/skills", readonly=True),
+                SkillPath(nickname="project", path="./.claude/skills", readonly=False),
             ]
 
-        self.skills_paths = [Path(p).expanduser() for p in skills_paths]
+        self.skills_paths = skills_paths
 
         # Metadata cache: skill_name -> SkillMetadata
         self._metadata_cache: Dict[str, SkillMetadata] = {}
@@ -85,10 +107,11 @@ class SkillManager:
         self._metadata_cache.clear()
 
         # Discover skills from all configured paths
-        for skills_path in self.skills_paths:
-            if skills_path.exists():
-                # Use the path itself as the location identifier
-                self._scan_directory(skills_path, location=str(skills_path))
+        for skill_path_config in self.skills_paths:
+            path = skill_path_config.expanded_path
+            if path.exists():
+                # Use the nickname as the location identifier
+                self._scan_directory(path, location=skill_path_config.nickname)
 
         # Index skills for semantic search after discovery
         self._index_skills_embeddings()
@@ -173,6 +196,10 @@ class SkillManager:
         """Get metadata for a specific skill"""
         return self._metadata_cache.get(skill_name)
 
+    def get_writable_skill_paths(self) -> List[SkillPath]:
+        """Get list of writable skill paths (for agent to use when creating skills)"""
+        return [sp for sp in self.skills_paths if not sp.readonly]
+
     def read_skill(self, skill_name: str) -> str:
         """
         Read full content of a skill file.
@@ -202,7 +229,7 @@ class SkillManager:
         skill_name: str,
         description: str,
         content: str,
-        location: Optional[str] = None,
+        location: str,
     ) -> SkillMetadata:
         """
         Create a new skill file.
@@ -211,8 +238,8 @@ class SkillManager:
             skill_name: Name for the skill (can include nested paths like "category/my-skill")
             description: Description of the skill
             content: Full markdown content (without frontmatter)
-            location: Path where to create the skill. Defaults to first path in skills_paths.
-                     Must be one of the configured skills_paths or a subdirectory within one.
+            location: Nickname of the skill path where to create the skill.
+                     Must be one of the configured skill path nicknames and must be writable (not readonly).
 
         Returns:
             SkillMetadata for the created skill
@@ -222,16 +249,21 @@ class SkillManager:
         """
         validate_skill_name(skill_name)
 
-        # Determine base directory
-        if location is None:
-            # Default to the first configured skills path
-            base_dir = self.skills_paths[0] if self.skills_paths else Path("./.claude/skills")
-        else:
-            # Verify location is one of the configured paths
-            location_path = Path(location).expanduser()
-            if not any(location_path.samefile(p) if (location_path.exists() and p.exists()) else str(location_path) == str(p) for p in self.skills_paths):
-                raise SecurityError(f"Location must be one of configured skills paths: {self.skills_paths}")
-            base_dir = location_path
+        # Find the skill path config by nickname
+        skill_path_config = None
+        for sp in self.skills_paths:
+            if sp.nickname == location:
+                skill_path_config = sp
+                break
+
+        if not skill_path_config:
+            available_nicknames = [sp.nickname for sp in self.skills_paths]
+            raise SecurityError(f"Unknown location: {location}. Available: {available_nicknames}")
+
+        if skill_path_config.readonly:
+            raise SecurityError(f"Location '{location}' is read-only. Cannot create skills there.")
+
+        base_dir = skill_path_config.expanded_path
 
         # Handle nested paths (e.g., "category/my-skill")
         parts = skill_name.split("/")

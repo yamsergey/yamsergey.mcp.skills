@@ -1,0 +1,24 @@
+{
+  "skills_paths": [
+    {
+      "nickname": "user",
+      "path": "~/.claude/skills",
+      "readonly": true
+    },
+    {
+      "nickname": "project",
+      "path": "./.claude/skills",
+      "readonly": false
+    },
+    {
+      "nickname": "team",
+      "path": "~/shared-team-skills",
+      "readonly": false
+    },
+    {
+      "nickname": "templates",
+      "path": "/opt/skill-templates",
+      "readonly": true
+    }
+  ]
+}
