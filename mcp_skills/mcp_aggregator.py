@@ -1,34 +1,84 @@
 """MCP Server Aggregation - Discover and aggregate tools from other MCP servers"""
 
 import json
-import subprocess
 import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
-from dataclasses import dataclass, asdict
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
+
+from .transports import (
+    MCPTransport,
+    StdioTransport,
+    HTTPTransport,
+    SSETransport,
+    MCPAuth,
+    BearerTokenAuth,
+    APIKeyAuth,
+    OAuthAuth,
+    OAuthDiscoveryAuth,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _expand_env_vars(value: str) -> str:
+    """Expand environment variables in string (supports $VAR and ${VAR} syntax)"""
+    if not isinstance(value, str):
+        return value
+
+    import re
+    result = value
+    # Handle ${VAR} syntax
+    def replace_var(match):
+        var_name = match.group(1)
+        return os.environ.get(var_name, match.group(0))
+    result = re.sub(r'\$\{([^}]+)\}', replace_var, result)
+    # Handle $VAR syntax (variable name followed by non-identifier char)
+    result = re.sub(r'\$([A-Za-z_][A-Za-z0-9_]*)(?=[^A-Za-z0-9_]|$)', lambda m: os.environ.get(m.group(1), m.group(0)), result)
+    return result
 
 
 @dataclass
 class MCPServerConfig:
     """Configuration for a single MCP server"""
     name: str
-    command: str
+    transport: str = "stdio"  # stdio, http, sse
+    # Stdio options
+    command: Optional[str] = None
     args: Optional[List[str]] = None
     env: Optional[Dict[str, str]] = None
+    # HTTP/SSE options
+    url: Optional[str] = None
+    auth: Optional[Dict[str, Any]] = None  # {"type": "bearer", "token": "..."} etc.
+    timeout: int = 30
+    verify_ssl: bool = True
 
     @classmethod
     def from_dict(cls, name: str, config: Dict) -> "MCPServerConfig":
         """Create from mcp-servers.json format"""
-        return cls(
-            name=name,
-            command=config.get("command", ""),
-            args=config.get("args", []),
-            env=config.get("env", {})
-        )
+        transport = config.get("transport", "stdio")
+
+        if transport == "stdio":
+            return cls(
+                name=name,
+                transport=transport,
+                command=config.get("command", ""),
+                args=config.get("args", []),
+                env=config.get("env", {}),
+            )
+        elif transport in ("http", "sse"):
+            return cls(
+                name=name,
+                transport=transport,
+                url=_expand_env_vars(config.get("url", "")),
+                auth=config.get("auth"),
+                timeout=config.get("timeout", 30),
+                verify_ssl=config.get("verify_ssl", True),
+            )
+        else:
+            raise ValueError(f"Unknown transport type: {transport}")
 
 
 @dataclass
@@ -83,8 +133,13 @@ class MCPConfigLoader:
                 logger.warning(f"Skipping invalid server config: {server_name}")
                 continue
 
-            if "command" not in server_config:
-                logger.warning(f"Server {server_name} missing 'command' field")
+            # Validate transport-specific required fields
+            transport = server_config.get("transport", "stdio")
+            if transport == "stdio" and "command" not in server_config:
+                logger.warning(f"Server {server_name} (stdio) missing 'command' field")
+                continue
+            elif transport in ("http", "sse") and "url" not in server_config:
+                logger.warning(f"Server {server_name} ({transport}) missing 'url' field")
                 continue
 
             try:
@@ -95,8 +150,72 @@ class MCPConfigLoader:
         return servers
 
 
+def _create_auth(auth_config: Optional[Dict[str, Any]]) -> Optional[MCPAuth]:
+    """
+    Create authentication instance from configuration.
+
+    Args:
+        auth_config: Authentication configuration dict with 'type' and type-specific fields
+
+    Returns:
+        MCPAuth instance or None if no auth config provided
+
+    Supported auth types:
+        - bearer: Static bearer token
+        - apikey: Custom header-based API key
+        - oauth: OAuth 2.0 Client Credentials Flow
+        - oauth-discovery: OAuth 2.0 Authorization Code Flow with .well-known discovery
+    """
+    if not auth_config:
+        return None
+
+    auth_type = auth_config.get("type", "").lower()
+
+    if auth_type == "bearer":
+        token = _expand_env_vars(auth_config.get("token", ""))
+        return BearerTokenAuth(token)
+
+    elif auth_type == "apikey":
+        header_name = auth_config.get("header", "X-API-Key")
+        api_key = _expand_env_vars(auth_config.get("key", ""))
+        return APIKeyAuth(header_name, api_key)
+
+    elif auth_type == "oauth":
+        client_id = _expand_env_vars(auth_config.get("client_id", ""))
+        client_secret = _expand_env_vars(auth_config.get("client_secret", ""))
+        token_url = _expand_env_vars(auth_config.get("token_url", ""))
+        auth_url = auth_config.get("auth_url")
+        if auth_url:
+            auth_url = _expand_env_vars(auth_url)
+        scope = auth_config.get("scope")
+        return OAuthAuth(client_id, client_secret, token_url, auth_url, scope)
+
+    elif auth_type == "oauth-discovery":
+        client_id = _expand_env_vars(auth_config.get("client_id", ""))
+        discovery_url = _expand_env_vars(auth_config.get("discovery_url", ""))
+        scope = auth_config.get("scope")
+        redirect_uri = auth_config.get("redirect_uri", "http://localhost:8080/callback")
+        port = auth_config.get("port", 8080)
+
+        if not client_id or not discovery_url:
+            logger.error("oauth-discovery requires 'client_id' and 'discovery_url'")
+            return None
+
+        return OAuthDiscoveryAuth(
+            client_id=client_id,
+            discovery_url=discovery_url,
+            scope=scope,
+            redirect_uri=redirect_uri,
+            port=port
+        )
+
+    else:
+        logger.warning(f"Unknown auth type: {auth_type}")
+        return None
+
+
 class MCPServerConnector:
-    """Manages connection to a single MCP server via stdio"""
+    """Manages connection to a single MCP server via transport abstraction"""
 
     def __init__(self, config: MCPServerConfig):
         """
@@ -106,52 +225,49 @@ class MCPServerConnector:
             config: MCPServerConfig for the server
         """
         self.config = config
-        self.process = None
+        self.transport: Optional[MCPTransport] = None
         self.initialized = False
 
     async def connect(self) -> None:
         """
-        Start MCP server process and initialize connection.
+        Start MCP server and initialize connection via transport.
 
         Raises:
             RuntimeError: If server fails to start or initialize
         """
         try:
-            # Build command with args
-            cmd = [self.config.command]
-            if self.config.args:
-                cmd.extend(self.config.args)
+            # Create transport based on config
+            if self.config.transport == "stdio":
+                self.transport = StdioTransport(
+                    command=self.config.command,
+                    args=self.config.args,
+                    env=self.config.env
+                )
+            elif self.config.transport == "http":
+                auth = _create_auth(self.config.auth)
+                self.transport = HTTPTransport(
+                    url=self.config.url,
+                    auth=auth,
+                    timeout=self.config.timeout,
+                    verify_ssl=self.config.verify_ssl
+                )
+            elif self.config.transport == "sse":
+                auth = _create_auth(self.config.auth)
+                self.transport = SSETransport(
+                    url=self.config.url,
+                    auth=auth,
+                    timeout=self.config.timeout,
+                    verify_ssl=self.config.verify_ssl
+                )
+            else:
+                raise ValueError(f"Unknown transport: {self.config.transport}")
 
-            logger.debug(f"Starting MCP server: {self.config.name} - {cmd}")
-
-            # Start process
-            self.process = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                env={**(dict(os.environ) if self.config.env is None else self.config.env)},
-                text=True,
-                bufsize=1
-            )
-
-            # Send initialize request
-            await self._send_request("initialize", {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {
-                    "name": "mcp-skills-aggregator",
-                    "version": "0.1.1"
-                }
-            })
-
+            # Connect transport
+            await self.transport.connect()
             self.initialized = True
             logger.info(f"Connected to MCP server: {self.config.name}")
 
         except Exception as e:
-            if self.process:
-                self.process.terminate()
-                self.process = None
             raise RuntimeError(f"Failed to connect to MCP server {self.config.name}: {e}")
 
     async def get_tools(self) -> List[MCPTool]:
@@ -164,11 +280,11 @@ class MCPServerConnector:
         Raises:
             RuntimeError: If server not connected or request fails
         """
-        if not self.initialized:
+        if not self.initialized or not self.transport:
             raise RuntimeError(f"MCP server {self.config.name} not connected")
 
         try:
-            response = await self._send_request("tools/list", {})
+            response = await self.transport.send_request("tools/list", {})
 
             tools = []
             if response and "tools" in response:
@@ -201,11 +317,11 @@ class MCPServerConnector:
         Raises:
             RuntimeError: If server not connected or call fails
         """
-        if not self.initialized:
+        if not self.initialized or not self.transport:
             raise RuntimeError(f"MCP server {self.config.name} not connected")
 
         try:
-            response = await self._send_request("tools/call", {
+            response = await self.transport.send_request("tools/call", {
                 "name": tool_name,
                 "arguments": arguments
             })
@@ -218,66 +334,14 @@ class MCPServerConnector:
 
     async def disconnect(self) -> None:
         """Disconnect from MCP server"""
-        if self.process:
+        if self.transport:
             try:
-                self.process.terminate()
-                self.process.wait(timeout=5)
+                await self.transport.disconnect()
             except Exception as e:
                 logger.warning(f"Error disconnecting from {self.config.name}: {e}")
-                try:
-                    self.process.kill()
-                except:
-                    pass
             finally:
-                self.process = None
+                self.transport = None
                 self.initialized = False
-
-    async def _send_request(self, method: str, params: Dict) -> Dict:
-        """
-        Send JSON-RPC request to MCP server and get response.
-
-        Args:
-            method: JSON-RPC method name
-            params: Method parameters
-
-        Returns:
-            Response data
-
-        Raises:
-            RuntimeError: If request fails or server not running
-        """
-        if not self.process or self.process.poll() is not None:
-            raise RuntimeError(f"MCP server {self.config.name} not running")
-
-        request = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": method,
-            "params": params
-        }
-
-        try:
-            # Send request
-            request_json = json.dumps(request) + "\n"
-            self.process.stdin.write(request_json)
-            self.process.stdin.flush()
-
-            # Read response
-            response_line = self.process.stdout.readline()
-            if not response_line:
-                raise RuntimeError("No response from MCP server")
-
-            response = json.loads(response_line)
-
-            # Check for JSON-RPC errors
-            if "error" in response:
-                raise RuntimeError(f"MCP error: {response['error']}")
-
-            return response.get("result", {})
-
-        except Exception as e:
-            logger.error(f"Request failed for {method}: {e}")
-            raise
 
 
 class MCPAggregator:
