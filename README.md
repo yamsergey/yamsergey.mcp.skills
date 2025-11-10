@@ -118,9 +118,9 @@ Each skill path in the system has:
 - **nickname**: Short identifier for the path (auto-generated from directory name, or explicitly configured)
 - **readonly**: Whether new skills can be created in this path (default: false when using CLI)
 
-Default paths if none specified:
-- `~/.claude/skills` (nickname: "user", readonly: true)
-- `./.claude/skills` (nickname: "project", readonly: false)
+**No default paths** - You must explicitly configure skill paths via:
+- `--config` parameter with a JSON configuration file
+- `--skills-path` CLI arguments
 
 **Mode Comparison:**
 
@@ -134,7 +134,7 @@ Default paths if none specified:
 
 ### Configuring in Claude Code
 
-#### Original Mode (with default directories)
+#### Original Mode (minimal - no skill paths configured)
 ```json
 {
   "mcp-skills": {
@@ -143,9 +143,7 @@ Default paths if none specified:
 }
 ```
 
-Default paths used:
-- `~/.claude/skills` (nickname: "user", readonly: true)
-- `./.claude/skills` (nickname: "project", readonly: false)
+This will run but discover no skills since no paths are configured. Use `--config` or `--skills-path` to add skill directories.
 
 #### Original Mode (with custom skill paths)
 ```json
@@ -426,10 +424,10 @@ Main class for skill operations:
 ```python
 from mcp_skills.skill_manager import SkillManager, SkillPath
 
-# Using default paths (~/.claude/skills and ./.claude/skills)
-manager = SkillManager()
+# No default paths - must explicitly configure skill directories
+manager = SkillManager()  # Empty, no skills discovered
 
-# Using custom skill paths with nicknames and readonly flags
+# Using skill paths with nicknames and readonly flags
 manager = SkillManager(
     skills_paths=[
         SkillPath(nickname="user", path="~/.claude/skills", readonly=True),

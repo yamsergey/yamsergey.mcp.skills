@@ -76,18 +76,12 @@ class SkillManager:
 
         Args:
             skills_paths: List of SkillPath config objects to scan.
-                         Defaults to [user: ~/.claude/skills, project: ./.claude/skills] if not provided.
+                         If not provided, no skill paths are scanned (must be explicitly configured).
                          Each path is scanned and skills are indexed with their location.
             enable_embeddings: Enable semantic search with embeddings (default: True)
         """
-        # Use provided paths or default to user + project skills
-        if skills_paths is None:
-            skills_paths = [
-                SkillPath(nickname="user", path="~/.claude/skills", readonly=True),
-                SkillPath(nickname="project", path="./.claude/skills", readonly=False),
-            ]
-
-        self.skills_paths = skills_paths
+        # Use provided paths only - no defaults
+        self.skills_paths = skills_paths if skills_paths is not None else []
 
         # Metadata cache: skill_name -> SkillMetadata
         self._metadata_cache: Dict[str, SkillMetadata] = {}
