@@ -1,25 +1,6 @@
 # MCP Skills Server
 
-An MCP (Model Context Protocol) server that exposes [Anthropic Claude Code Skills](https://docs.claude.com/en/docs/claude-code/skills) as MCP tools. This allows you to manage and access your skills through the Model Context Protocol.
-
-## Features
-
-- **Dual Mode Operation**: Choose between original (all skills as tools) or search API (token-efficient discovery)
-- **Semantic Search**: Optional embeddings-based search for intelligent skill discovery
-- **Skills as MCP Tools**: Automatically discovers and exposes skills as callable MCP tools
-- **Metadata Caching**: Efficiently caches skill metadata while lazily loading full content
-- **CRUD Operations**: Create, read, and update skills through MCP tools
-- **Security**: Path validation prevents directory traversal and other security issues
-- **Flexible Locations**: Support for both user-level and project-level skills
-- **Error Handling**: Clear error messages for all failure scenarios
-
-## How It Works
-
-1. **Discovery**: Server scans skill directories on startup for `.md` files
-2. **Metadata Extraction**: Parses frontmatter to extract name, description, and metadata
-3. **Tool Registration**: Creates MCP tools from skill metadata
-4. **Lazy Loading**: Full skill content is only read when a tool is invoked
-5. **Management**: Provides tools to create and update skills
+An MCP (Model Context Protocol) server for discovering, managing, and accessing [Anthropic Claude Code Skills](https://docs.claude.com/en/docs/claude-code/skills) through a standardized interface.
 
 ## Installation
 
@@ -28,436 +9,278 @@ An MCP (Model Context Protocol) server that exposes [Anthropic Claude Code Skill
 - Python 3.8+
 - pip
 
-### From GitHub (Recommended for latest development version)
+### From GitHub
 
 ```bash
-# Install directly from GitHub
 pip install git+https://github.com/yamsergey/yamsergey.mcp.skills.git
-
-# Or install a specific version/tag
-pip install git+https://github.com/yamsergey/yamsergey.mcp.skills.git@v0.1.0
-
-# Or install from a specific branch
-pip install git+https://github.com/yamsergey/yamsergey.mcp.skills.git@main
 ```
 
 ### From Source (Development)
 
 ```bash
-# Clone the repository
 git clone https://github.com/yamsergey/yamsergey.mcp.skills.git
 cd yamsergey.mcp.skills
-
-# Install in development mode
-pip install -e . // or pipx install -e . if pip can't install it on your environment
-
-# Or install with dev dependencies
-pip install -e ".[dev]"
+pip install -e .
 ```
 
-### From PyPI (Once published)
+### With Semantic Search Support
 
 ```bash
-pip install mcp-skills
+pip install "git+https://github.com/yamsergey/yamsergey.mcp.skills.git[embeddings]"
 ```
 
-### Installing with Semantic Search Support
+## Configuration
 
-To use semantic search in Search API mode, install with embeddings support:
+Skills are discovered only from explicitly configured paths. No defaults are applied.
 
-```bash
-# Install with embeddings (semantic search)
-pip install -e ".[embeddings]"
+### Quick Start: JSON Configuration
 
-# Install with all dev dependencies including embeddings
-pip install -e ".[dev]"
+Create a `skills-config.json`:
 
-# Note: Embeddings are optional. The system works with keyword-based search fallback if embeddings unavailable.
-```
-
-**Embeddings Setup:**
-- Model: `sentence-transformers/all-MiniLM-L6-v2` (22MB, 384-dimensional)
-- Vector Database: Chroma (local, persistent)
-- Cache Location: `~/.cache/mcp-skills`
-
-## Usage
-
-### Running the Server
-
-The server supports two modes and flexible skill path configuration:
-
-#### Mode 1: Original Mode (Default - Backward Compatible)
-
-Exposes all skills as individual MCP tools. Best for small skill collections.
-
-```bash
-# Using default directories (~/.claude/skills and ./.claude/skills)
-mcp-skills
-
-# Using custom skill paths (can specify multiple)
-# Nicknames are auto-generated from path names
-mcp-skills --skills-path ~/.claude/skills --skills-path ./project-skills
-```
-
-#### Mode 2: Search API Mode (Token Efficient)
-
-Exposes only discovery and access tools. Best for large skill collections (100+, 1000+ skills). Implements semantic search-first approach based on [Anthropic's research](https://www.anthropic.com/engineering/code-execution-with-mcp).
-
-```bash
-# Enable search API mode with default directories
-mcp-skills --search-api
-
-# With custom skill paths
-mcp-skills --search-api --skills-path ~/.claude/skills --skills-path ./project-skills
-```
-
-**Skill Path Configuration:**
-
-Each skill path in the system has:
-- **path**: File system directory containing `.md` skill files
-- **nickname**: Short identifier for the path (auto-generated from directory name, or explicitly configured)
-- **readonly**: Whether new skills can be created in this path (default: false when using CLI)
-
-**No default paths** - You must explicitly configure skill paths via:
-- `--config` parameter with a JSON configuration file
-- `--skills-path` CLI arguments
-
-**Mode Comparison:**
-
-| Aspect | Original Mode | Search API Mode |
-|--------|---------------|-----------------|
-| Tools Exposed | All skills + 5 management | 5 tools only |
-| Best For | < 50 skills | 100+ skills |
-| Token Overhead | ~75,000 tokens | ~1,350 tokens |
-| Discovery | Direct tool invocation | Semantic search first |
-| CRUD Operations | ✓ All supported | ✓ All supported |
-
-### Configuring in Claude Code
-
-#### Original Mode (minimal - no skill paths configured)
 ```json
 {
-  "mcp-skills": {
-    "command": "mcp-skills"
-  }
-}
-```
-
-This will run but discover no skills since no paths are configured. Use `--config` or `--skills-path` to add skill directories.
-
-#### Original Mode (with custom skill paths)
-```json
-{
-  "mcp-skills": {
-    "command": "mcp-skills",
-    "args": [
-      "--skills-path",
-      "~/.claude/skills",
-      "--skills-path",
-      "./.claude/skills",
-      "--skills-path",
-      "~/my-shared-skills"
-    ]
-  }
-}
-```
-
-Auto-generated nicknames:
-- `~/.claude/skills` → nickname "skills"
-- `./.claude/skills` → nickname "skills" (with index fallback if duplicate)
-- `~/my-shared-skills` → nickname "my-shared-skills"
-
-#### Search API Mode
-```json
-{
-  "mcp-skills": {
-    "command": "mcp-skills",
-    "args": [
-      "--search-api",
-      "--skills-path",
-      "~/.claude/skills",
-      "--skills-path",
-      "./.claude/skills"
-    ]
-  }
-}
-```
-
-When creating skills via `create_skill` tool, the agent must specify a `location` parameter with one of the available writable path nicknames. The tool schema will display available locations automatically.
-
-## Skill Format
-
-Skills are markdown files with YAML frontmatter:
-
-### Basic Format
-
-```markdown
----
-description: Brief description of what this skill does
----
-
-# Skill Name
-
-Full markdown content describing the skill, its usage, examples, etc.
-
-## Features
-
-- Feature 1
-- Feature 2
-
-## Usage
-
-Example usage here...
-```
-
-### Extended Format (Recommended for Search API Mode)
-
-```markdown
----
-description: Brief description of what this skill does
-tags: ["security", "audit"]              # Optional: categorization tags
-category: "security"                     # Optional: primary category
-keywords: ["vulnerability", "scanning"]  # Optional: searchable keywords
-use_case: "Identify security issues"     # Optional: primary use case
----
-
-# Skill Name
-
-Full markdown content describing the skill, its usage, examples, etc.
-```
-
-**File naming**: Use lowercase with hyphens (e.g., `my-awesome-skill.md`)
-
-**Frontmatter Fields:**
-- `description` (required): Brief description
-- `tags` (optional): List of categorization tags for filtering
-- `category` (optional): Primary category for hierarchical organization
-- `keywords` (optional): Searchable keywords for discovery
-- `use_case` (optional): Primary use case or scenario
-
-**Nested skills**: Skills can be organized in nested directories using forward slashes in the skill name (e.g., `utils/helpers/my-skill.md`). Nested directories are automatically created when skills are created.
-
-## Available Tools
-
-### Original Mode: Skill Tools
-
-In original mode, each discovered skill becomes an MCP tool that returns its full markdown content.
-
-**Skill Tool Parameters:**
-- `format` (optional): Output format - `raw` (default) or `json`
-
-**Skill Tool Returns:**
-- `raw` format: Full markdown content
-- `json` format: JSON object with skill name, content, and metadata
-
-### Search API Mode: Discovery & Access Tools
-
-#### `search_skills`
-
-Search for skills using semantic understanding (with optional keyword fallback).
-
-**Parameters:**
-- `query` (required): Natural language search query
-- `limit` (optional): Max results to return (default: 10, max: 50)
-- `tags` (optional): Filter by tags (all must match)
-- `category` (optional): Filter by category
-
-**Returns:**
-```json
-{
-  "query": "security validation",
-  "results_count": 3,
-  "results": [
+  "skills_paths": [
     {
-      "name": "security-audit",
-      "description": "Audit security configurations...",
-      "similarity_score": 0.95,
-      "tags": ["security", "audit"],
-      "category": "security",
-      "location": "project"
+      "nickname": "project",
+      "path": "./.claude/skills",
+      "readonly": false
+    },
+    {
+      "nickname": "shared",
+      "path": "~/shared-skills",
+      "readonly": true
     }
   ]
 }
 ```
 
-#### `get_skill`
+Run the server:
 
-Load full content of a specific skill by name (discovered via `search_skills`).
+```bash
+mcp-skills --config skills-config.json
+```
 
-**Parameters:**
-- `name` (required): Skill name to load
-- `format` (optional): Output format - `raw` (default) or `json`
+### Location Nicknames for Agents
 
-**Returns:**
-- `raw` format: Full markdown content
-- `json` format: JSON object with skill name, content, and metadata
+When creating skills, agents can reference skill locations by their **nickname**. For example:
 
-### Management Tools (Both Modes)
+- **User prompt**: "Create a security audit skill for the shared project"
+- **Agent understands**: "shared" is a known location, uses it to determine where to create the skill
 
-#### `list_skills`
+This allows agents to infer or ask users directly about which location to use for new skills.
 
-List all available skills with metadata.
+### Quick Start: CLI Arguments
 
-**Returns:**
+```bash
+mcp-skills --skills-path ./.claude/skills --skills-path ~/shared-skills
+```
+
+## Claude Code Configuration
+
+Add to your Claude Code MCP servers config:
+
 ```json
 {
-  "total": 2,
-  "skills": {
-    "my-skill": {
-      "name": "my-skill",
-      "description": "Description of my skill",
-      "location": "project"
+  "mcpServers": {
+    "mcp-skills": {
+      "command": "mcp-skills",
+      "args": [
+        "--config",
+        "~/.mcp-skills-config.json"
+      ]
     }
   }
 }
 ```
 
-#### `create_skill`
+## Skill Path Configuration
 
-Create a new skill file in a writable skill path.
+Each skill path has the following properties:
 
-**Parameters:**
-- `name` (required): Skill name (alphanumeric, hyphens, underscores, and forward slashes for nesting)
-  - Examples: `my-skill`, `category/my-skill`, `category/subcategory/my-skill`
-  - Nested directories are automatically created if they don't exist
-- `description` (required): Skill description
-- `content` (required): Full markdown content
-- `location` (required): Nickname of the writable skill path where to create the skill
-  - Must be one of the configured writable (non-readonly) skill paths
-  - Available locations are listed in the tool schema with an enum
-  - Example values: `"project"`, `"shared"` (depends on configuration)
+| Property | Type | Description |
+|----------|------|-------------|
+| `nickname` | string | Identifier for the path (used when creating skills) |
+| `path` | string | File system directory with `.md` skill files |
+| `readonly` | boolean | If `true`, skills can only be read; if `false`, agents can create/modify skills |
+| `pattern` | string (optional) | Regexp pattern to include skill files (e.g., `"^security_.*"` or `"^security_.*\|^audit_.*"` for multiple categories). Uses standard regex with `\|` for alternation |
+| `exclude_pattern` | string (optional) | Regexp pattern to exclude skill files (e.g., `".*_deprecated$"` or `".*_deprecated$\|.*_experimental$"`). Uses standard regex with `\|` for alternation |
 
-**Returns:**
+### Pattern Filtering Examples
+
+**Example 1: Single inclusion pattern**
+
+Filter skills by name prefix:
+
 ```json
 {
-  "message": "Skill 'my-skill' created successfully",
-  "metadata": {
-    "name": "my-skill",
-    "description": "...",
-    "location": "project"
-  },
-  "path": "/path/to/skill/file"
+  "skills_paths": [
+    {
+      "nickname": "security",
+      "path": "./skills/all-skills",
+      "readonly": true,
+      "pattern": "^security_.*"
+    }
+  ]
 }
 ```
 
-#### `update_skill`
+**Example 2: Multiple inclusion patterns**
 
-Update an existing skill.
+Include multiple categories using pattern alternation:
 
-**Parameters:**
-- `name` (required): Skill name
-- `description` (optional): New description
-- `content` (optional): New markdown content
-
-**Returns:**
 ```json
 {
-  "message": "Skill 'my-skill' updated successfully",
-  "metadata": {
-    "name": "my-skill",
-    "description": "...",
-    "location": "project"
-  }
+  "skills_paths": [
+    {
+      "nickname": "compliance",
+      "path": "./skills/all-skills",
+      "readonly": true,
+      "pattern": "^security_.*|^audit_.*|^compliance_.*"
+    }
+  ]
 }
 ```
 
-## Security Considerations
+**Example 3: Exclude deprecated and experimental skills**
 
-The server implements multiple security safeguards:
+Use exclude patterns to filter out unwanted skills:
 
-- **Path Traversal Prevention**: Validates all file paths to ensure they stay within skill directories
-- **Filename Validation**: Restricts skill names to alphanumeric, hyphens, and underscores
-- **File Size Limits**: Enforces maximum content size (10MB default)
-- **Symlink Handling**: Validates symlinks don't escape base directory
-- **Extension Validation**: Only `.md` files are recognized as skills
-
-## Directory Structure
-
+```json
+{
+  "skills_paths": [
+    {
+      "nickname": "project",
+      "path": "./.claude/skills",
+      "readonly": false,
+      "exclude_pattern": ".*_deprecated$|.*_experimental$"
+    }
+  ]
+}
 ```
-~/.claude/skills/              # User skills (read-only by default)
-├── my-skill.md
-├── another-skill.md
-└── ...
 
-./.claude/skills/              # Project skills
-├── project-skill.md
-└── ...
+**Example 4: Include + Exclude (whitelist and blacklist)**
+
+Combine multiple inclusion and exclusion patterns for fine-grained control:
+
+```json
+{
+  "skills_paths": [
+    {
+      "nickname": "production",
+      "path": "./shared-skills",
+      "readonly": true,
+      "pattern": "^prod_.*|^stable_.*",
+      "exclude_pattern": ".*_testing$|.*_deprecated$"
+    }
+  ]
+}
 ```
+
+This configuration discovers only skills matching at least one inclusion pattern AND not matching any exclusion pattern, enabling selective skill loading from larger shared directories.
+
+## Running the Server
+
+The server exposes skills via semantic search API for token-efficient discovery and access.
+
+```bash
+mcp-skills --config skills-config.json
+```
+
+**Available Tools:**
+
+- **`search_skills`** - Semantic search for skills by meaning and keywords
+- **`get_skill`** - Load full skill content
+- **`list_skills`** - List all available skills
+- **`create_skill`** - Create new skill in a writable location
+- **`update_skill`** - Update an existing skill
+
+## Skill Format
+
+Skills are Markdown files with YAML frontmatter:
+
+```markdown
+---
+description: Brief description of the skill
+tags: ["category", "tag"]
+category: "main-category"
+---
+
+# Skill Name
+
+Skill content in Markdown format...
+
+## Features
+- Feature 1
+- Feature 2
+```
+
+**Required:** `description` in frontmatter
+**Optional:** `tags`, `category`, `keywords`, `use_case`
+
+## Features
+
+- **Flexible path configuration** - Any number of skill directories with custom nicknames
+- **Read-only or writable paths** - Control where agents can create/modify skills
+- **Nested skill organization** - Organize skills in subdirectories
+- **Semantic search** - Optional embeddings-based intelligent discovery
+- **CRUD operations** - Create, read, update skills via MCP tools
+- **Security** - Path validation prevents directory traversal
+- **Metadata enrichment** - Tags, categories, and keywords for better organization
 
 ## Development
 
 ### Running Tests
 
 ```bash
-# Run all tests
 pytest
-
-# Run with coverage
 pytest --cov=mcp_skills
-
-# Run specific test file
-pytest tests/test_security.py -v
 ```
 
 ### Project Structure
 
 ```
-mcp-skills/
-├── mcp_skills/
-│   ├── __init__.py
-│   ├── server.py           # MCP server implementation
-│   ├── skill_manager.py    # Skill discovery and management
-│   └── security.py         # Security utilities and validation
-├── tests/
-│   ├── test_security.py    # Security validation tests
-│   └── test_skill_manager.py  # Skill manager tests
-├── pyproject.toml          # Project configuration
-└── README.md
+mcp_skills/
+├── __init__.py
+├── server.py              # MCP server implementation
+├── skill_manager.py       # Skill discovery and management
+├── security.py            # Path validation and security
+└── embeddings.py          # Semantic search (optional)
 ```
 
 ## API Reference
 
-### SkillManager
-
-Main class for skill operations:
+### SkillManager (Python)
 
 ```python
 from mcp_skills.skill_manager import SkillManager, SkillPath
 
-# No default paths - must explicitly configure skill directories
-manager = SkillManager()  # Empty, no skills discovered
-
-# Using skill paths with nicknames and readonly flags
 manager = SkillManager(
     skills_paths=[
-        SkillPath(nickname="user", path="~/.claude/skills", readonly=True),
         SkillPath(nickname="project", path="./.claude/skills", readonly=False),
-        SkillPath(nickname="shared", path="~/shared-skills", readonly=False),
+        SkillPath(
+            nickname="compliance",
+            path="~/shared-skills",
+            readonly=True,
+            pattern="^security_.*|^audit_.*|^compliance_.*"
+        ),
+        SkillPath(
+            nickname="production",
+            path="~/shared-skills",
+            readonly=True,
+            pattern="^prod_.*|^stable_.*",
+            exclude_pattern=".*_testing$|.*_deprecated$"
+        ),
     ]
 )
 
-# List skills
-skills = manager.list_skills()  # Dict[str, SkillMetadata]
+# List all skills
+skills = manager.list_skills()
 
-# Get metadata for a skill
-metadata = manager.get_skill_metadata("skill-name")
-
-# Read full skill content
+# Get a specific skill
 content = manager.read_skill("skill-name")
 
-# Get writable skill paths (for agents)
-writable_paths = manager.get_writable_skill_paths()  # List[SkillPath]
-
-# Create a new skill (flat) in a specific location
-metadata = manager.create_skill(
-    skill_name="my-skill",
-    description="Description",
-    content="# Markdown content",
-    location="project"  # Use nickname of writable path
-)
-
-# Create a nested skill (directories created automatically)
-metadata = manager.create_skill(
+# Create a new skill (only in writable locations)
+manager.create_skill(
     skill_name="category/my-skill",
     description="Description",
     content="# Markdown content",
@@ -465,71 +288,20 @@ metadata = manager.create_skill(
 )
 
 # Update a skill
-metadata = manager.update_skill(
-    skill_name="my-skill",
-    description="New description",  # optional
-    content="# New content"          # optional
-)
-```
-
-### Security Module
-
-Utility functions for path and content validation:
-
-```python
-from mcp_skills.security import (
-    resolve_and_validate_path,
-    validate_skill_path,
-    validate_skill_name,
-    validate_file_content,
-    SecurityError
+manager.update_skill(
+    skill_name="skill-name",
+    description="New description",
+    content="Updated content"
 )
 
-# Validate paths
-try:
-    safe_path = resolve_and_validate_path("/base/dir", "relative/path.md")
-except SecurityError as e:
-    print(f"Security error: {e}")
-
-# Validate skill names
-try:
-    validate_skill_name("my-skill")
-except SecurityError:
-    print("Invalid skill name")
+# Search skills
+results = manager.search_skills(
+    query="security audit",
+    limit=10,
+    tags=["security"],
+    location="compliance"
+)
 ```
-
-## Error Handling
-
-All errors are returned as MCP tool responses with `isError=True`:
-
-```json
-{
-  "type": "text",
-  "text": "Error: Skill not found: nonexistent-skill"
-}
-```
-
-Common error scenarios:
-- **Skill not found**: Skill doesn't exist in any skill directory
-- **Invalid skill name**: Contains special characters or invalid format
-- **Path traversal detected**: Attempt to access files outside skill directories
-- **File not found**: Skill metadata exists but file is missing
-- **Content too large**: File exceeds maximum size limit
-
-## Performance
-
-- **Metadata Caching**: Skill metadata is cached in memory after discovery
-- **Lazy Loading**: Full content is only read on-demand
-- **No File Watching**: Changes require server restart (by design for simplicity)
-
-To refresh skills after adding new files, restart the server.
-
-## Limitations
-
-- No real-time file watching (restart required for new skills)
-- Maximum file size: 10MB (configurable)
-- Skill names limited to 255 characters
-- Only `.md` files are recognized as skills
 
 ## License
 
@@ -537,7 +309,7 @@ MIT
 
 ## Contributing
 
-Contributions welcome! Please ensure tests pass before submitting.
+Contributions welcome! Please ensure tests pass:
 
 ```bash
 pytest --cov=mcp_skills
