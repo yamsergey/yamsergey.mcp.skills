@@ -1,6 +1,7 @@
 """Skill discovery, loading, and management"""
 
 import os
+import re
 from pathlib import Path
 from typing import Dict, Optional, List
 from dataclasses import dataclass, field
@@ -21,6 +22,8 @@ class SkillPath:
     nickname: str  # Short identifier for the path (e.g., "user", "project", "shared")
     path: str  # File system path
     readonly: bool = False  # Whether new skills can be created in this path
+    pattern: Optional[str] = None  # Optional regexp pattern to filter skill files (e.g., "^security_.*")
+    exclude_pattern: Optional[str] = None  # Optional regexp pattern to exclude skill files (e.g., ".*_deprecated$")
 
     @property
     def expanded_path(self) -> Path:
@@ -33,6 +36,8 @@ class SkillPath:
             "nickname": self.nickname,
             "path": self.path,
             "readonly": self.readonly,
+            "pattern": self.pattern,
+            "exclude_pattern": self.exclude_pattern,
         }
 
 
@@ -105,19 +110,51 @@ class SkillManager:
             path = skill_path_config.expanded_path
             if path.exists():
                 # Use the nickname as the location identifier
-                self._scan_directory(path, location=skill_path_config.nickname)
+                self._scan_directory(
+                    path,
+                    location=skill_path_config.nickname,
+                    pattern=skill_path_config.pattern,
+                    exclude_pattern=skill_path_config.exclude_pattern,
+                )
 
         # Index skills for semantic search after discovery
         self._index_skills_embeddings()
 
-    def _scan_directory(self, directory: Path, location: str) -> None:
-        """Scan a directory for skill files (recursively)"""
+    def _scan_directory(
+        self,
+        directory: Path,
+        location: str,
+        pattern: Optional[str] = None,
+        exclude_pattern: Optional[str] = None,
+    ) -> None:
+        """Scan a directory for skill files (recursively)
+
+        Args:
+            directory: Directory path to scan
+            location: Location nickname for the skills
+            pattern: Optional regexp pattern to filter skill file names (e.g., "^security_.*")
+            exclude_pattern: Optional regexp pattern to exclude skill file names (e.g., ".*_deprecated$")
+        """
         try:
+            # Compile patterns if provided
+            compiled_pattern = re.compile(pattern) if pattern else None
+            compiled_exclude_pattern = re.compile(exclude_pattern) if exclude_pattern else None
+
             # First try to find SKILL.md files in subdirectories (Anthropic agent skills format)
             # Use ** for recursive matching
             for skill_file in directory.glob("**/SKILL.md"):
                 try:
                     # Use parent directory name as skill name for nested skills
+                    parent_name = skill_file.parent.name
+
+                    # Apply inclusion pattern filter if provided
+                    if compiled_pattern and not compiled_pattern.match(parent_name):
+                        continue
+
+                    # Apply exclusion pattern filter if provided
+                    if compiled_exclude_pattern and compiled_exclude_pattern.match(parent_name):
+                        continue
+
                     metadata = self._extract_metadata(skill_file, location, use_parent_name=True)
                     self._metadata_cache[metadata.name] = metadata
                 except Exception as e:
@@ -135,6 +172,14 @@ class SkillManager:
                         rel_path = file_path.relative_to(directory)
                         # Remove .md extension and convert path separators to forward slashes
                         skill_name = str(rel_path.with_suffix("")).replace("\\", "/")
+
+                        # Apply inclusion pattern filter if provided
+                        if compiled_pattern and not compiled_pattern.match(skill_name):
+                            continue
+
+                        # Apply exclusion pattern filter if provided
+                        if compiled_exclude_pattern and compiled_exclude_pattern.match(skill_name):
+                            continue
 
                         metadata = self._extract_metadata(file_path, location)
                         # Override the name with the hierarchical path-based name

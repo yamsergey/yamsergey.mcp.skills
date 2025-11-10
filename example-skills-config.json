@@ -8,7 +8,8 @@
     {
       "nickname": "project",
       "path": "./.claude/skills",
-      "readonly": false
+      "readonly": false,
+      "exclude_pattern": ".*_deprecated$|.*_experimental$"
     },
     {
       "nickname": "team",
@@ -19,6 +20,19 @@
       "nickname": "templates",
       "path": "/opt/skill-templates",
       "readonly": true
+    },
+    {
+      "nickname": "security",
+      "path": "~/shared-skills",
+      "readonly": true,
+      "pattern": "^security_.*"
+    },
+    {
+      "nickname": "devops",
+      "path": "~/shared-skills",
+      "readonly": true,
+      "pattern": "^devops_.*",
+      "exclude_pattern": ".*_deprecated$"
     }
   ]
 }

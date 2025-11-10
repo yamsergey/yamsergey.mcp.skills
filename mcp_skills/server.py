@@ -30,7 +30,6 @@ class SkillsServer:
     def __init__(
         self,
         skills_paths=None,
-        enable_search_api=False,
         search_tool_description=None,
     ):
         """
@@ -38,19 +37,14 @@ class SkillsServer:
 
         Args:
             skills_paths: List of SkillPath config objects to scan.
-                         Defaults to [user: ~/.claude/skills (readonly), project: ./.claude/skills (writable)] if not provided.
-            enable_search_api: If True, use discovery API (search_skills + get_skill).
-                             If False, expose all skills as individual tools (original behavior).
-                             Default: False (backward compatible)
+                         If not provided, no skill paths are scanned (must be explicitly configured).
             search_tool_description: Custom description for search_skills tool.
                                    Can be either:
                                    - A string: used directly as the description
                                    - A file path: description is read from the file
                                    - None: uses default description
-                                   Only applies in search API mode.
         """
         self.skill_manager = SkillManager(skills_paths)
-        self.enable_search_api = enable_search_api
         self.search_tool_description = self._load_description(search_tool_description)
 
         self.server = Server(
@@ -101,40 +95,11 @@ class SkillsServer:
         return description_input.strip() if isinstance(description_input, str) else None
 
     async def _list_tools_handler(self) -> list[Tool]:
-        """List available tools based on configured mode"""
-        if self.enable_search_api:
-            # Search API mode: only expose discovery, access, and management tools
-            # This reduces token overhead by 98% vs exposing hundreds of skill tools
-            management_tools = self._get_management_tools(self.search_tool_description)
-            return management_tools
-        else:
-            # Original mode: expose all skills as individual tools plus management tools
-            tools = []
-
-            # Add skill tools
-            for skill_name, metadata in self.skill_manager.list_skills().items():
-                tool = Tool(
-                    name=skill_name,
-                    description=metadata.description or f"Skill: {skill_name}",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "format": {
-                                "type": "string",
-                                "description": "Output format (default: raw markdown)",
-                                "enum": ["raw", "json"],
-                            }
-                        },
-                        "required": [],
-                    },
-                )
-                tools.append(tool)
-
-            # Add management tools
-            management_tools = self._get_management_tools(self.search_tool_description)
-            tools.extend(management_tools)
-
-            return tools
+        """List available tools (search API mode only)"""
+        # Search API mode: only expose discovery, access, and management tools
+        # This reduces token overhead by 98% vs exposing hundreds of skill tools
+        management_tools = self._get_management_tools(self.search_tool_description)
+        return management_tools
 
     def _get_management_tools(self, search_description=None) -> list[Tool]:
         """
@@ -262,32 +227,20 @@ class SkillsServer:
     async def _call_tool_handler(self, name: str, arguments: dict) -> CallToolResult:
         """Execute a tool (discovery, access, or management operation)"""
         try:
-            if self.enable_search_api:
-                # Search API mode: handle discovery, access, and management tools
-                if name == "search_skills":
-                    return await self._handle_search_skills(arguments)
-                elif name == "get_skill":
-                    return await self._handle_get_skill(arguments)
-                elif name == "list_skills":
-                    return await self._handle_list_skills(arguments)
-                elif name == "create_skill":
-                    return await self._handle_create_skill(arguments)
-                elif name == "update_skill":
-                    return await self._handle_update_skill(arguments)
-                else:
-                    # Unknown tool
-                    raise SecurityError(f"Unknown tool: {name}. Available tools: search_skills, get_skill, list_skills, create_skill, update_skill")
+            # Search API mode: handle discovery, access, and management tools
+            if name == "search_skills":
+                return await self._handle_search_skills(arguments)
+            elif name == "get_skill":
+                return await self._handle_get_skill(arguments)
+            elif name == "list_skills":
+                return await self._handle_list_skills(arguments)
+            elif name == "create_skill":
+                return await self._handle_create_skill(arguments)
+            elif name == "update_skill":
+                return await self._handle_update_skill(arguments)
             else:
-                # Original mode: handle all tools including individual skill names
-                if name == "list_skills":
-                    return await self._handle_list_skills(arguments)
-                elif name == "create_skill":
-                    return await self._handle_create_skill(arguments)
-                elif name == "update_skill":
-                    return await self._handle_update_skill(arguments)
-                else:
-                    # Assume it's a skill name in original mode
-                    return await self._handle_get_skill({"name": name, **arguments})
+                # Unknown tool
+                raise SecurityError(f"Unknown tool: {name}. Available tools: search_skills, get_skill, list_skills, create_skill, update_skill")
 
         except SecurityError as e:
             return CallToolResult(
@@ -485,20 +438,12 @@ def main():
              "Defaults to [~/.claude/skills, ./.claude/skills] if neither --config nor --skills-path provided.",
     )
     parser.add_argument(
-        "--search-api",
-        action="store_true",
-        default=False,
-        help="Enable search API mode (discovery + access pattern). "
-             "If disabled, exposes all skills as individual tools (default: disabled for backward compatibility)",
-    )
-    parser.add_argument(
         "--search-description",
         type=str,
         default=None,
         help="Custom description for the search_skills tool (optional). "
              "Can be either a string or path to a file. "
-             "If a file path is provided, the description is read from the file. "
-             "Only applies in search API mode.",
+             "If a file path is provided, the description is read from the file.",
     )
 
     args = parser.parse_args()
@@ -540,7 +485,6 @@ def main():
 
     server = SkillsServer(
         skills_paths=skills_path_objects,
-        enable_search_api=args.search_api,
         search_tool_description=args.search_description,
     )
 
