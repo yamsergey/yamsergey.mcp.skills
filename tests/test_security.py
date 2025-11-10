@@ -77,7 +77,14 @@ def test_validate_skill_path_valid():
 
 def test_validate_skill_name_valid():
     """Test validation of valid skill names"""
-    for name in ["my-skill", "my_skill", "MySkill", "skill123"]:
+    for name in [
+        "my-skill",
+        "my_skill",
+        "MySkill",
+        "skill123",
+        "category/my-skill",
+        "category/subcategory/my-skill",
+    ]:
         validate_skill_name(name)  # Should not raise
 
 
@@ -87,9 +94,10 @@ def test_validate_skill_name_invalid():
         "",
         "skill@name",
         "skill.name",
-        "skill/name",
         "skill name",
         "../skill",
+        "/skill",
+        "skill/",
         "a" * 256,
     ]
 

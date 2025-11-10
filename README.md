@@ -84,7 +84,7 @@ pip install -e ".[dev]"
 
 ### Running the Server
 
-The server supports two modes:
+The server supports two modes and flexible skill path configuration:
 
 #### Mode 1: Original Mode (Default - Backward Compatible)
 
@@ -94,8 +94,9 @@ Exposes all skills as individual MCP tools. Best for small skill collections.
 # Using default directories (~/.claude/skills and ./.claude/skills)
 mcp-skills
 
-# Using custom directories
-mcp-skills --user-skills /path/to/user/skills --project-skills /path/to/project/skills
+# Using custom skill paths (can specify multiple)
+# Nicknames are auto-generated from path names
+mcp-skills --skills-path ~/.claude/skills --skills-path ./project-skills
 ```
 
 #### Mode 2: Search API Mode (Token Efficient)
@@ -103,12 +104,23 @@ mcp-skills --user-skills /path/to/user/skills --project-skills /path/to/project/
 Exposes only discovery and access tools. Best for large skill collections (100+, 1000+ skills). Implements semantic search-first approach based on [Anthropic's research](https://www.anthropic.com/engineering/code-execution-with-mcp).
 
 ```bash
-# Enable search API mode
+# Enable search API mode with default directories
 mcp-skills --search-api
 
-# With custom directories
-mcp-skills --search-api --user-skills /path/to/user/skills --project-skills /path/to/project/skills
+# With custom skill paths
+mcp-skills --search-api --skills-path ~/.claude/skills --skills-path ./project-skills
 ```
+
+**Skill Path Configuration:**
+
+Each skill path in the system has:
+- **path**: File system directory containing `.md` skill files
+- **nickname**: Short identifier for the path (auto-generated from directory name, or explicitly configured)
+- **readonly**: Whether new skills can be created in this path (default: false when using CLI)
+
+**No default paths** - You must explicitly configure skill paths via:
+- `--config` parameter with a JSON configuration file
+- `--skills-path` CLI arguments
 
 **Mode Comparison:**
 
@@ -122,20 +134,38 @@ mcp-skills --search-api --user-skills /path/to/user/skills --project-skills /pat
 
 ### Configuring in Claude Code
 
-#### Original Mode
+#### Original Mode (minimal - no skill paths configured)
+```json
+{
+  "mcp-skills": {
+    "command": "mcp-skills"
+  }
+}
+```
+
+This will run but discover no skills since no paths are configured. Use `--config` or `--skills-path` to add skill directories.
+
+#### Original Mode (with custom skill paths)
 ```json
 {
   "mcp-skills": {
     "command": "mcp-skills",
     "args": [
-      "--user-skills",
+      "--skills-path",
       "~/.claude/skills",
-      "--project-skills",
-      "./.claude/skills"
+      "--skills-path",
+      "./.claude/skills",
+      "--skills-path",
+      "~/my-shared-skills"
     ]
   }
 }
 ```
+
+Auto-generated nicknames:
+- `~/.claude/skills` → nickname "skills"
+- `./.claude/skills` → nickname "skills" (with index fallback if duplicate)
+- `~/my-shared-skills` → nickname "my-shared-skills"
 
 #### Search API Mode
 ```json
@@ -144,14 +174,16 @@ mcp-skills --search-api --user-skills /path/to/user/skills --project-skills /pat
     "command": "mcp-skills",
     "args": [
       "--search-api",
-      "--user-skills",
+      "--skills-path",
       "~/.claude/skills",
-      "--project-skills",
+      "--skills-path",
       "./.claude/skills"
     ]
   }
 }
 ```
+
+When creating skills via `create_skill` tool, the agent must specify a `location` parameter with one of the available writable path nicknames. The tool schema will display available locations automatically.
 
 ## Skill Format
 
@@ -202,6 +234,8 @@ Full markdown content describing the skill, its usage, examples, etc.
 - `category` (optional): Primary category for hierarchical organization
 - `keywords` (optional): Searchable keywords for discovery
 - `use_case` (optional): Primary use case or scenario
+
+**Nested skills**: Skills can be organized in nested directories using forward slashes in the skill name (e.g., `utils/helpers/my-skill.md`). Nested directories are automatically created when skills are created.
 
 ## Available Tools
 
@@ -280,13 +314,18 @@ List all available skills with metadata.
 
 #### `create_skill`
 
-Create a new skill file.
+Create a new skill file in a writable skill path.
 
 **Parameters:**
-- `name` (required): Skill name (alphanumeric, hyphens, underscores only)
+- `name` (required): Skill name (alphanumeric, hyphens, underscores, and forward slashes for nesting)
+  - Examples: `my-skill`, `category/my-skill`, `category/subcategory/my-skill`
+  - Nested directories are automatically created if they don't exist
 - `description` (required): Skill description
 - `content` (required): Full markdown content
-- `location` (optional): `user` or `project` (default: `project`)
+- `location` (required): Nickname of the writable skill path where to create the skill
+  - Must be one of the configured writable (non-readonly) skill paths
+  - Available locations are listed in the tool schema with an enum
+  - Example values: `"project"`, `"shared"` (depends on configuration)
 
 **Returns:**
 ```json
@@ -383,11 +422,18 @@ mcp-skills/
 Main class for skill operations:
 
 ```python
-from mcp_skills.skill_manager import SkillManager
+from mcp_skills.skill_manager import SkillManager, SkillPath
 
+# No default paths - must explicitly configure skill directories
+manager = SkillManager()  # Empty, no skills discovered
+
+# Using skill paths with nicknames and readonly flags
 manager = SkillManager(
-    user_skills_dir="~/.claude/skills",
-    project_skills_dir="./.claude/skills"
+    skills_paths=[
+        SkillPath(nickname="user", path="~/.claude/skills", readonly=True),
+        SkillPath(nickname="project", path="./.claude/skills", readonly=False),
+        SkillPath(nickname="shared", path="~/shared-skills", readonly=False),
+    ]
 )
 
 # List skills
@@ -399,9 +445,20 @@ metadata = manager.get_skill_metadata("skill-name")
 # Read full skill content
 content = manager.read_skill("skill-name")
 
-# Create a new skill
+# Get writable skill paths (for agents)
+writable_paths = manager.get_writable_skill_paths()  # List[SkillPath]
+
+# Create a new skill (flat) in a specific location
 metadata = manager.create_skill(
     skill_name="my-skill",
+    description="Description",
+    content="# Markdown content",
+    location="project"  # Use nickname of writable path
+)
+
+# Create a nested skill (directories created automatically)
+metadata = manager.create_skill(
+    skill_name="category/my-skill",
     description="Description",
     content="# Markdown content",
     location="project"

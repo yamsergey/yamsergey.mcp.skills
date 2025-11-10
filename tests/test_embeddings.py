@@ -6,7 +6,7 @@ import tempfile
 import json
 import frontmatter
 
-from mcp_skills.skill_manager import SkillManager
+from mcp_skills.skill_manager import SkillManager, SkillPath
 from mcp_skills.embeddings import SkillEmbeddingSearch, SearchResult, EMBEDDINGS_AVAILABLE
 
 
@@ -285,7 +285,7 @@ class TestSkillManagerWithSearch:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SkillManager(
-                project_skills_dir=str(temp_skills_dir),
+                skills_paths=[str(temp_skills_dir)],
                 enable_embeddings=True,
             )
 
@@ -299,7 +299,7 @@ class TestSkillManagerWithSearch:
     def test_skill_manager_search_without_embeddings(self, temp_skills_dir):
         """Test keyword search fallback when embeddings disabled"""
         manager = SkillManager(
-            project_skills_dir=str(temp_skills_dir),
+            skills_paths=[SkillPath(nickname="test", path=str(temp_skills_dir), readonly=False)],
             enable_embeddings=False,
         )
 
@@ -315,7 +315,7 @@ class TestSkillManagerWithSearch:
             pytest.skip("Embeddings not available")
 
         manager = SkillManager(
-            project_skills_dir=str(temp_skills_dir),
+            skills_paths=[SkillPath(nickname="test", path=str(temp_skills_dir), readonly=False)],
             enable_embeddings=True,
         )
 
@@ -330,7 +330,7 @@ class TestSkillManagerWithSearch:
             pytest.skip("Embeddings not available")
 
         manager = SkillManager(
-            project_skills_dir=str(temp_skills_dir),
+            skills_paths=[SkillPath(nickname="test", path=str(temp_skills_dir), readonly=False)],
             enable_embeddings=True,
         )
 
@@ -343,7 +343,7 @@ class TestSkillManagerWithSearch:
     def test_skill_metadata_with_enrichment(self, temp_skills_dir):
         """Test that skill metadata includes enrichment fields"""
         manager = SkillManager(
-            project_skills_dir=str(temp_skills_dir),
+            skills_paths=[SkillPath(nickname="test", path=str(temp_skills_dir), readonly=False)],
             enable_embeddings=False,
         )
 
@@ -355,7 +355,7 @@ class TestSkillManagerWithSearch:
     def test_keyword_search_scoring(self, temp_skills_dir):
         """Test keyword search relevance scoring"""
         manager = SkillManager(
-            project_skills_dir=str(temp_skills_dir),
+            skills_paths=[SkillPath(nickname="test", path=str(temp_skills_dir), readonly=False)],
             enable_embeddings=False,
         )
 

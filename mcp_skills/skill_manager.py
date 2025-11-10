@@ -15,6 +15,28 @@ from .security import (
 
 
 @dataclass
+class SkillPath:
+    """Configuration for a skill directory path"""
+
+    nickname: str  # Short identifier for the path (e.g., "user", "project", "shared")
+    path: str  # File system path
+    readonly: bool = False  # Whether new skills can be created in this path
+
+    @property
+    def expanded_path(self) -> Path:
+        """Get the expanded absolute path"""
+        return Path(self.path).expanduser()
+
+    def to_dict(self) -> dict:
+        """Convert to JSON-serializable dict"""
+        return {
+            "nickname": self.nickname,
+            "path": self.path,
+            "readonly": self.readonly,
+        }
+
+
+@dataclass
 class SkillMetadata:
     """Metadata for a skill"""
 
@@ -46,20 +68,20 @@ class SkillManager:
 
     def __init__(
         self,
-        user_skills_dir: Optional[str] = None,
-        project_skills_dir: Optional[str] = None,
+        skills_paths: Optional[List[SkillPath]] = None,
         enable_embeddings: bool = True,
     ):
         """
         Initialize skill manager.
 
         Args:
-            user_skills_dir: Path to user skills directory (defaults to ~/.claude/skills)
-            project_skills_dir: Path to project skills directory (defaults to ./.claude/skills)
+            skills_paths: List of SkillPath config objects to scan.
+                         If not provided, no skill paths are scanned (must be explicitly configured).
+                         Each path is scanned and skills are indexed with their location.
             enable_embeddings: Enable semantic search with embeddings (default: True)
         """
-        self.user_skills_dir = Path(user_skills_dir or "~/.claude/skills").expanduser()
-        self.project_skills_dir = Path(project_skills_dir or "./.claude/skills")
+        # Use provided paths only - no defaults
+        self.skills_paths = skills_paths if skills_paths is not None else []
 
         # Metadata cache: skill_name -> SkillMetadata
         self._metadata_cache: Dict[str, SkillMetadata] = {}
@@ -78,13 +100,12 @@ class SkillManager:
         """Discover all available skills"""
         self._metadata_cache.clear()
 
-        # Discover user skills
-        if self.user_skills_dir.exists():
-            self._scan_directory(self.user_skills_dir, "user")
-
-        # Discover project skills
-        if self.project_skills_dir.exists():
-            self._scan_directory(self.project_skills_dir, "project")
+        # Discover skills from all configured paths
+        for skill_path_config in self.skills_paths:
+            path = skill_path_config.expanded_path
+            if path.exists():
+                # Use the nickname as the location identifier
+                self._scan_directory(path, location=skill_path_config.nickname)
 
         # Index skills for semantic search after discovery
         self._index_skills_embeddings()
@@ -93,7 +114,8 @@ class SkillManager:
         """Scan a directory for skill files (recursively)"""
         try:
             # First try to find SKILL.md files in subdirectories (Anthropic agent skills format)
-            for skill_file in directory.glob("*/SKILL.md"):
+            # Use ** for recursive matching
+            for skill_file in directory.glob("**/SKILL.md"):
                 try:
                     # Use parent directory name as skill name for nested skills
                     metadata = self._extract_metadata(skill_file, location, use_parent_name=True)
@@ -102,15 +124,22 @@ class SkillManager:
                     # Skip files with parse errors, log them
                     print(f"Warning: Failed to parse skill {skill_file}: {e}")
 
-            # Also find top-level .md files (for flat skill directory structure)
-            # Skip common non-skill files
-            skip_files = {'README', 'THIRD_PARTY_NOTICES', 'agent_skills_spec', 'LICENSE', 'CHANGELOG'}
-            for file_path in directory.glob("*.md"):
-                # Skip if filename (without .md) is in skip list
+            # Also find all .md files in any subdirectory (for flat skill directory structure)
+            # Skip common non-skill files and SKILL.md (already processed above)
+            skip_files = {'README', 'THIRD_PARTY_NOTICES', 'agent_skills_spec', 'LICENSE', 'CHANGELOG', 'SKILL'}
+            for file_path in directory.glob("**/*.md"):
+                # Skip if filename (without .md) is in skip list or if it's a SKILL.md file
                 if file_path.stem not in skip_files:
                     try:
+                        # Build skill name from relative path (e.g., category/subcategory/skill)
+                        rel_path = file_path.relative_to(directory)
+                        # Remove .md extension and convert path separators to forward slashes
+                        skill_name = str(rel_path.with_suffix("")).replace("\\", "/")
+
                         metadata = self._extract_metadata(file_path, location)
-                        self._metadata_cache[metadata.name] = metadata
+                        # Override the name with the hierarchical path-based name
+                        metadata.name = skill_name
+                        self._metadata_cache[skill_name] = metadata
                     except Exception as e:
                         # Skip files with parse errors, log them
                         print(f"Warning: Failed to parse skill {file_path}: {e}")
@@ -169,6 +198,10 @@ class SkillManager:
         """Get metadata for a specific skill"""
         return self._metadata_cache.get(skill_name)
 
+    def get_writable_skill_paths(self) -> List[SkillPath]:
+        """Get list of writable skill paths (for agent to use when creating skills)"""
+        return [sp for sp in self.skills_paths if not sp.readonly]
+
     def read_skill(self, skill_name: str) -> str:
         """
         Read full content of a skill file.
@@ -198,16 +231,17 @@ class SkillManager:
         skill_name: str,
         description: str,
         content: str,
-        location: str = "project",
+        location: str,
     ) -> SkillMetadata:
         """
         Create a new skill file.
 
         Args:
-            skill_name: Name for the skill
+            skill_name: Name for the skill (can include nested paths like "category/my-skill")
             description: Description of the skill
             content: Full markdown content (without frontmatter)
-            location: "user" or "project"
+            location: Nickname of the skill path where to create the skill.
+                     Must be one of the configured skill path nicknames and must be writable (not readonly).
 
         Returns:
             SkillMetadata for the created skill
@@ -217,18 +251,37 @@ class SkillManager:
         """
         validate_skill_name(skill_name)
 
-        # Determine target directory
-        if location == "user":
-            target_dir = self.user_skills_dir
-        elif location == "project":
-            target_dir = self.project_skills_dir
-        else:
-            raise SecurityError(f"Invalid location: {location}")
+        # Find the skill path config by nickname
+        skill_path_config = None
+        for sp in self.skills_paths:
+            if sp.nickname == location:
+                skill_path_config = sp
+                break
 
-        # Create directory if needed
+        if not skill_path_config:
+            available_nicknames = [sp.nickname for sp in self.skills_paths]
+            raise SecurityError(f"Unknown location: {location}. Available: {available_nicknames}")
+
+        if skill_path_config.readonly:
+            raise SecurityError(f"Location '{location}' is read-only. Cannot create skills there.")
+
+        base_dir = skill_path_config.expanded_path
+
+        # Handle nested paths (e.g., "category/my-skill")
+        parts = skill_name.split("/")
+        file_name = f"{parts[-1]}.md"
+        relative_dir = "/".join(parts[:-1]) if len(parts) > 1 else ""
+
+        # Resolve and validate the final path to prevent directory traversal
+        if relative_dir:
+            target_dir = resolve_and_validate_path(base_dir, relative_dir)
+        else:
+            target_dir = base_dir
+
+        # Create directory structure if needed
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        file_path = target_dir / f"{skill_name}.md"
+        file_path = target_dir / file_name
 
         if file_path.exists():
             raise SecurityError(f"Skill already exists: {skill_name}")

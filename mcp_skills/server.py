@@ -20,7 +20,7 @@ from mcp.types import (
 )
 import mcp.server.stdio
 
-from .skill_manager import SkillManager
+from .skill_manager import SkillManager, SkillPath
 from .security import SecurityError
 
 
@@ -29,8 +29,7 @@ class SkillsServer:
 
     def __init__(
         self,
-        user_skills_dir=None,
-        project_skills_dir=None,
+        skills_paths=None,
         enable_search_api=False,
         search_tool_description=None,
     ):
@@ -38,8 +37,8 @@ class SkillsServer:
         Initialize MCP server.
 
         Args:
-            user_skills_dir: Path to user skills directory
-            project_skills_dir: Path to project skills directory
+            skills_paths: List of SkillPath config objects to scan.
+                         Defaults to [user: ~/.claude/skills (readonly), project: ./.claude/skills (writable)] if not provided.
             enable_search_api: If True, use discovery API (search_skills + get_skill).
                              If False, expose all skills as individual tools (original behavior).
                              Default: False (backward compatible)
@@ -50,7 +49,7 @@ class SkillsServer:
                                    - None: uses default description
                                    Only applies in search API mode.
         """
-        self.skill_manager = SkillManager(user_skills_dir, project_skills_dir)
+        self.skill_manager = SkillManager(skills_paths)
         self.enable_search_api = enable_search_api
         self.search_tool_description = self._load_description(search_tool_description)
 
@@ -63,6 +62,15 @@ class SkillsServer:
         # Register handlers - using direct decorator pattern
         self.server.list_tools()(self._list_tools_handler)
         self.server.call_tool()(self._call_tool_handler)
+
+    def _get_create_skill_description(self) -> str:
+        """Generate create_skill tool description with available locations"""
+        writable_paths = self.skill_manager.get_writable_skill_paths()
+        if writable_paths:
+            locations = ", ".join([f"'{sp.nickname}'" for sp in writable_paths])
+            return f"Create a new skill file. Available writable locations: {locations}. Specify location using the location parameter."
+        else:
+            return "Create a new skill file. No writable locations configured."
 
     def _load_description(self, description_input: str) -> str:
         """
@@ -173,13 +181,13 @@ class SkillsServer:
             ),
             Tool(
                 name="create_skill",
-                description="Create a new skill file",
+                description=self._get_create_skill_description(),
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "name": {
                             "type": "string",
-                            "description": "Skill name (alphanumeric, hyphens, underscores)",
+                            "description": "Skill name (alphanumeric, hyphens, underscores, and forward slashes for nesting). Examples: 'my-skill', 'category/my-skill'",
                         },
                         "description": {
                             "type": "string",
@@ -191,12 +199,11 @@ class SkillsServer:
                         },
                         "location": {
                             "type": "string",
-                            "description": "Where to create the skill",
-                            "enum": ["user", "project"],
-                            "default": "project",
+                            "enum": [sp.nickname for sp in self.skill_manager.get_writable_skill_paths()],
+                            "description": f"Where to create the skill. Available writable locations: {', '.join(sp.nickname for sp in self.skill_manager.get_writable_skill_paths())}",
                         },
                     },
-                    "required": ["name", "description", "content"],
+                    "required": ["name", "description", "content", "location"],
                 },
             ),
             Tool(
@@ -389,17 +396,30 @@ class SkillsServer:
         name = arguments.get("name")
         description = arguments.get("description")
         content = arguments.get("content")
-        location = arguments.get("location", "project")
+        location = arguments.get("location")
 
-        if not all([name, description, content]):
-            raise SecurityError("name, description, and content are required")
+        if not all([name, description, content, location]):
+            raise SecurityError("name, description, content, and location are required")
 
         metadata = self.skill_manager.create_skill(name, description, content, location)
 
+        # Find the skill path config to get full location details
+        skill_path_config = None
+        for sp in self.skill_manager.skills_paths:
+            if sp.nickname == location:
+                skill_path_config = sp
+                break
+
         result = {
-            "message": f"Skill '{name}' created successfully",
+            "message": f"Skill '{name}' created successfully in location '{location}'",
+            "skill_name": name,
+            "location": {
+                "nickname": location,
+                "path": skill_path_config.path if skill_path_config else "unknown",
+                "full_path": str(metadata.file_path),
+                "readonly": skill_path_config.readonly if skill_path_config else None,
+            },
             "metadata": metadata.to_dict(),
-            "path": str(metadata.file_path),
         }
         return CallToolResult(
             content=[TextContent(type="text", text=json.dumps(result, indent=2))],
@@ -449,16 +469,20 @@ def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(description="MCP Skills Server")
     parser.add_argument(
-        "--user-skills",
+        "--config",
         type=str,
         default=None,
-        help="Path to user skills directory (default: ~/.claude/skills)",
+        help="Path to JSON configuration file with skill paths. "
+             "Config should have 'skills_paths' array with objects containing 'nickname', 'path', and 'readonly' fields.",
     )
     parser.add_argument(
-        "--project-skills",
+        "--skills-path",
         type=str,
-        default=None,
-        help="Path to project skills directory (default: ./.claude/skills)",
+        action="append",
+        dest="skills_paths",
+        help="Path to skills directory (can be specified multiple times). "
+             "Only used if --config is not provided. "
+             "Defaults to [~/.claude/skills, ./.claude/skills] if neither --config nor --skills-path provided.",
     )
     parser.add_argument(
         "--search-api",
@@ -479,9 +503,43 @@ def main():
 
     args = parser.parse_args()
 
+    # Load skill paths from config file or CLI arguments
+    skills_path_objects = None
+
+    if args.config:
+        # Load from config file
+        try:
+            config_path = Path(args.config).expanduser()
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+
+            skills_paths_data = config.get("skills_paths", [])
+            if skills_paths_data:
+                skills_path_objects = []
+                for sp_data in skills_paths_data:
+                    skills_path_objects.append(
+                        SkillPath(
+                            nickname=sp_data["nickname"],
+                            path=sp_data["path"],
+                            readonly=sp_data.get("readonly", False),
+                        )
+                    )
+        except Exception as e:
+            print(f"Error loading config file {args.config}: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.skills_paths:
+        # Convert CLI paths to SkillPath objects with auto-generated nicknames
+        skills_path_objects = []
+        for i, path in enumerate(args.skills_paths):
+            # Generate nickname from path or use index-based nickname
+            nickname = Path(path).expanduser().name or f"skills_{i}"
+            skills_path_objects.append(
+                SkillPath(nickname=nickname, path=path, readonly=False)
+            )
+
     server = SkillsServer(
-        user_skills_dir=args.user_skills,
-        project_skills_dir=args.project_skills,
+        skills_paths=skills_path_objects,
         enable_search_api=args.search_api,
         search_tool_description=args.search_description,
     )
