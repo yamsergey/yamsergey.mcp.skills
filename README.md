@@ -2,9 +2,9 @@
 
 An MCP (Model Context Protocol) server for discovering, managing, and accessing `Skills` which are similar to [Anthropic Claude Code Skills](https://docs.claude.com/en/docs/claude-code/skills).
 
-While having skills on filesystem is convinient and effective for Claude Code, not all coding agents support this (if any except Claude). Additionally Claude code requires specific naming convention and file structure in order to be able to discover those skills, and while folder names and structure can leave nreadcrumbs for coding agent to discover them it's somehow limited.
+While having skills on the filesystem is convenient and effective for Claude Code, not all coding agents support this approach. Additionally, Claude Code requires specific naming conventions and file structures to discover skills. While folder names and structure can leave breadcrumbs for agents to find them, this is limited.
 
-This MCP allows to configure flexible environemnt to provide `skills` on demand. During start it discover skill files (by default all markdown files it can find in provided directoies) read their frontmatter yaml and save into vector database, which than use for symantic search through available skills, hence agent can use common language to query it.
+This MCP server provides a flexible environment to serve skills on demand. On startup, it discovers skill files (all markdown files in configured directories), reads their YAML frontmatter, and indexes them into a vector database. This enables semantic search through available skills, allowing agents to query using natural language.
 
 **Available Tools:**
 
@@ -23,27 +23,6 @@ This MCP allows to configure flexible environemnt to provide `skills` on demand.
 - **Semantic search** - Optional embeddings-based intelligent discovery
 - **CRUD operations** - Create, read, update skills via MCP tools
 - **Metadata enrichment** - Tags, categories, and keywords for better organization
-
-
-
-This is an example of the confgig, you can configure as many paths as you want.
-
-```json
-{
-  "skills_paths": [
-    {
-      "nickname": "production", // Use nickname to ask agent to create or update skill in specific group
-      "path": "./shared-skills", 
-      "readonly": true, // If set to true it won't be possible to change or create skills there
-      "pattern": "^prod_.*|^stable_.*", // Optional: provide custom regexmp to search skill files.
-      "exclude_pattern": ".*_testing$|.*_deprecated$" // Optional: allows to exclude files from indexing.
-    }
-  ]
-}
-```
-
-This approach allows to decrease amount of required context window while having all required `skills` available on demand.
-
 
 ## Installation
 
