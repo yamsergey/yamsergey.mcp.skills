@@ -1,6 +1,49 @@
 # MCP Skills Server
 
-An MCP (Model Context Protocol) server for discovering, managing, and accessing [Anthropic Claude Code Skills](https://docs.claude.com/en/docs/claude-code/skills) through a standardized interface.
+An MCP (Model Context Protocol) server for discovering, managing, and accessing `Skills` which are similar to [Anthropic Claude Code Skills](https://docs.claude.com/en/docs/claude-code/skills).
+
+While having skills on filesystem is convinient and effective for Claude Code, not all coding agents support this (if any except Claude). Additionally Claude code requires specific naming convention and file structure in order to be able to discover those skills, and while folder names and structure can leave nreadcrumbs for coding agent to discover them it's somehow limited.
+
+This MCP allows to configure flexible environemnt to provide `skills` on demand. During start it discover skill files (by default all markdown files it can find in provided directoies) read their frontmatter yaml and save into vector database, which than use for symantic search through available skills, hence agent can use common language to query it.
+
+**Available Tools:**
+
+- **`search_skills`** - Semantic search for skills by meaning and keywords
+- **`get_skill`** - Load full skill content
+- **`list_skills`** - List all available skills
+- **`create_skill`** - Create new skill in a writable location
+- **`update_skill`** - Update an existing skill
+
+**Features:**
+
+- **Reduce required context window** - By providing only required skills on demand it can effectively reduce context window required to operate
+- **Flexible path configuration** - Any number of skill directories with custom nicknames
+- **Read-only or writable paths** - Control where agents can create/modify skills
+- **Nested skill organization** - Organize skills in subdirectories
+- **Semantic search** - Optional embeddings-based intelligent discovery
+- **CRUD operations** - Create, read, update skills via MCP tools
+- **Metadata enrichment** - Tags, categories, and keywords for better organization
+
+
+
+This is an example of the confgig, you can configure as many paths as you want.
+
+```json
+{
+  "skills_paths": [
+    {
+      "nickname": "production", // Use nickname to ask agent to create or update skill in specific group
+      "path": "./shared-skills", 
+      "readonly": true, // If set to true it won't be possible to change or create skills there
+      "pattern": "^prod_.*|^stable_.*", // Optional: provide custom regexmp to search skill files.
+      "exclude_pattern": ".*_testing$|.*_deprecated$" // Optional: allows to exclude files from indexing.
+    }
+  ]
+}
+```
+
+This approach allows to decrease amount of required context window while having all required `skills` available on demand.
+
 
 ## Installation
 
@@ -15,18 +58,18 @@ An MCP (Model Context Protocol) server for discovering, managing, and accessing 
 pip install git+https://github.com/yamsergey/yamsergey.mcp.skills.git
 ```
 
+but most probably you will have to use `pipx` to satisfy security concerns of your OS:
+
+```bash
+pipx install git+https://github.com/yamsergey/yamsergey.mcp.skills.git
+```
+
 ### From Source (Development)
 
 ```bash
 git clone https://github.com/yamsergey/yamsergey.mcp.skills.git
 cd yamsergey.mcp.skills
 pip install -e .
-```
-
-### With Semantic Search Support
-
-```bash
-pip install "git+https://github.com/yamsergey/yamsergey.mcp.skills.git[embeddings]"
 ```
 
 ## Configuration
@@ -75,9 +118,9 @@ This allows agents to infer or ask users directly about which location to use fo
 mcp-skills --skills-path ./.claude/skills --skills-path ~/shared-skills
 ```
 
-## Claude Code Configuration
+## Coding Agent Configuration
 
-Add to your Claude Code MCP servers config:
+Just configure it as your usual MCP server:
 
 ```json
 {
@@ -178,22 +221,6 @@ Combine multiple inclusion and exclusion patterns for fine-grained control:
 
 This configuration discovers only skills matching at least one inclusion pattern AND not matching any exclusion pattern, enabling selective skill loading from larger shared directories.
 
-## Running the Server
-
-The server exposes skills via semantic search API for token-efficient discovery and access.
-
-```bash
-mcp-skills --config skills-config.json
-```
-
-**Available Tools:**
-
-- **`search_skills`** - Semantic search for skills by meaning and keywords
-- **`get_skill`** - Load full skill content
-- **`list_skills`** - List all available skills
-- **`create_skill`** - Create new skill in a writable location
-- **`update_skill`** - Update an existing skill
-
 ## Skill Format
 
 Skills are Markdown files with YAML frontmatter:
@@ -216,16 +243,6 @@ Skill content in Markdown format...
 
 **Required:** `description` in frontmatter
 **Optional:** `tags`, `category`, `keywords`, `use_case`
-
-## Features
-
-- **Flexible path configuration** - Any number of skill directories with custom nicknames
-- **Read-only or writable paths** - Control where agents can create/modify skills
-- **Nested skill organization** - Organize skills in subdirectories
-- **Semantic search** - Optional embeddings-based intelligent discovery
-- **CRUD operations** - Create, read, update skills via MCP tools
-- **Security** - Path validation prevents directory traversal
-- **Metadata enrichment** - Tags, categories, and keywords for better organization
 
 ## Development
 
