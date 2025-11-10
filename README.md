@@ -97,6 +97,22 @@ This allows agents to infer or ask users directly about which location to use fo
 mcp-skills --skills-path ./.claude/skills --skills-path ~/shared-skills
 ```
 
+### Custom Search Description
+
+By default, the `search_skills` tool uses a comprehensive description from `search_skills_description.md` to guide AI agents on how to use the tool effectively.
+
+To provide a custom description:
+
+```bash
+mcp-skills --config skills-config.json --search-tool-description "Your custom description"
+```
+
+Or point to a custom description file:
+
+```bash
+mcp-skills --config skills-config.json --search-tool-description /path/to/custom-description.md
+```
+
 ## Coding Agent Configuration
 
 Just configure it as your usual MCP server:

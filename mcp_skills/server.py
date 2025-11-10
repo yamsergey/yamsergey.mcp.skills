@@ -68,15 +68,26 @@ class SkillsServer:
 
     def _load_description(self, description_input: str) -> str:
         """
-        Load description from string or file.
+        Load description from string, file, or default file.
 
         Args:
-            description_input: Either a description string or path to a file
+            description_input: Either a description string or path to a file.
+                             If None, tries to load from default search_skills_description.md
 
         Returns:
-            The description string (or None if input is None)
+            The description string (or None if input is None and default not found)
         """
+        # If no input provided, try to load from default description file
         if not description_input:
+            default_desc_path = Path(__file__).parent.parent / "search_skills_description.md"
+            if default_desc_path.exists() and default_desc_path.is_file():
+                try:
+                    with open(default_desc_path, "r", encoding="utf-8") as f:
+                        content = f.read().strip()
+                        if content:
+                            return content
+                except Exception as e:
+                    print(f"Warning: Failed to read default description file {default_desc_path}: {e}")
             return None
 
         # Try to treat it as a file path first
@@ -107,11 +118,10 @@ class SkillsServer:
 
         Args:
             search_description: Custom description for search_skills tool.
-                              If None, uses default description.
+                              If None, uses description from search_skills_description.md if available.
         """
-        # Use custom description if provided, otherwise use default
-        default_search_description = "Search for skills using semantic understanding (embeddings). Finds skills by meaning, not just keywords. Returns top matching skills with relevance scores."
-        search_description = search_description or default_search_description
+        # Use provided description, or it will be None if not provided
+        # (which is fine - the description is optional in the Tool definition)
 
         return [
             Tool(
