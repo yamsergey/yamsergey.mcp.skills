@@ -396,17 +396,30 @@ class SkillsServer:
         name = arguments.get("name")
         description = arguments.get("description")
         content = arguments.get("content")
-        location = arguments.get("location", "project")
+        location = arguments.get("location")
 
-        if not all([name, description, content]):
-            raise SecurityError("name, description, and content are required")
+        if not all([name, description, content, location]):
+            raise SecurityError("name, description, content, and location are required")
 
         metadata = self.skill_manager.create_skill(name, description, content, location)
 
+        # Find the skill path config to get full location details
+        skill_path_config = None
+        for sp in self.skill_manager.skills_paths:
+            if sp.nickname == location:
+                skill_path_config = sp
+                break
+
         result = {
-            "message": f"Skill '{name}' created successfully",
+            "message": f"Skill '{name}' created successfully in location '{location}'",
+            "skill_name": name,
+            "location": {
+                "nickname": location,
+                "path": skill_path_config.path if skill_path_config else "unknown",
+                "full_path": str(metadata.file_path),
+                "readonly": skill_path_config.readonly if skill_path_config else None,
+            },
             "metadata": metadata.to_dict(),
-            "path": str(metadata.file_path),
         }
         return CallToolResult(
             content=[TextContent(type="text", text=json.dumps(result, indent=2))],
