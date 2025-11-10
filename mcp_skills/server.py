@@ -477,6 +477,8 @@ def main():
                             nickname=sp_data["nickname"],
                             path=sp_data["path"],
                             readonly=sp_data.get("readonly", False),
+                            pattern=sp_data.get("pattern"),
+                            exclude_pattern=sp_data.get("exclude_pattern"),
                         )
                     )
         except Exception as e:
