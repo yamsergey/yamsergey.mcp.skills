@@ -227,32 +227,20 @@ class SkillsServer:
     async def _call_tool_handler(self, name: str, arguments: dict) -> CallToolResult:
         """Execute a tool (discovery, access, or management operation)"""
         try:
-            if self.enable_search_api:
-                # Search API mode: handle discovery, access, and management tools
-                if name == "search_skills":
-                    return await self._handle_search_skills(arguments)
-                elif name == "get_skill":
-                    return await self._handle_get_skill(arguments)
-                elif name == "list_skills":
-                    return await self._handle_list_skills(arguments)
-                elif name == "create_skill":
-                    return await self._handle_create_skill(arguments)
-                elif name == "update_skill":
-                    return await self._handle_update_skill(arguments)
-                else:
-                    # Unknown tool
-                    raise SecurityError(f"Unknown tool: {name}. Available tools: search_skills, get_skill, list_skills, create_skill, update_skill")
+            # Search API mode: handle discovery, access, and management tools
+            if name == "search_skills":
+                return await self._handle_search_skills(arguments)
+            elif name == "get_skill":
+                return await self._handle_get_skill(arguments)
+            elif name == "list_skills":
+                return await self._handle_list_skills(arguments)
+            elif name == "create_skill":
+                return await self._handle_create_skill(arguments)
+            elif name == "update_skill":
+                return await self._handle_update_skill(arguments)
             else:
-                # Original mode: handle all tools including individual skill names
-                if name == "list_skills":
-                    return await self._handle_list_skills(arguments)
-                elif name == "create_skill":
-                    return await self._handle_create_skill(arguments)
-                elif name == "update_skill":
-                    return await self._handle_update_skill(arguments)
-                else:
-                    # Assume it's a skill name in original mode
-                    return await self._handle_get_skill({"name": name, **arguments})
+                # Unknown tool
+                raise SecurityError(f"Unknown tool: {name}. Available tools: search_skills, get_skill, list_skills, create_skill, update_skill")
 
         except SecurityError as e:
             return CallToolResult(
