@@ -50,5 +50,8 @@ dev = [
 [tool.setuptools]
 packages = ["mcp_skills"]
 
+[tool.setuptools.package-data]
+mcp_skills = ["search_skills_description.md"]
+
 [project.scripts]
 mcp-skills = "mcp_skills.server:main"

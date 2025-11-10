@@ -79,7 +79,7 @@ class SkillsServer:
         """
         # If no input provided, try to load from default description file
         if not description_input:
-            default_desc_path = Path(__file__).parent.parent / "search_skills_description.md"
+            default_desc_path = Path(__file__).parent / "search_skills_description.md"
             if default_desc_path.exists() and default_desc_path.is_file():
                 try:
                     with open(default_desc_path, "r", encoding="utf-8") as f:
