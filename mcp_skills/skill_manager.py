@@ -120,7 +120,8 @@ class SkillManager:
         """Scan a directory for skill files (recursively)"""
         try:
             # First try to find SKILL.md files in subdirectories (Anthropic agent skills format)
-            for skill_file in directory.glob("*/SKILL.md"):
+            # Use ** for recursive matching
+            for skill_file in directory.glob("**/SKILL.md"):
                 try:
                     # Use parent directory name as skill name for nested skills
                     metadata = self._extract_metadata(skill_file, location, use_parent_name=True)
@@ -129,15 +130,22 @@ class SkillManager:
                     # Skip files with parse errors, log them
                     print(f"Warning: Failed to parse skill {skill_file}: {e}")
 
-            # Also find top-level .md files (for flat skill directory structure)
-            # Skip common non-skill files
-            skip_files = {'README', 'THIRD_PARTY_NOTICES', 'agent_skills_spec', 'LICENSE', 'CHANGELOG'}
-            for file_path in directory.glob("*.md"):
-                # Skip if filename (without .md) is in skip list
+            # Also find all .md files in any subdirectory (for flat skill directory structure)
+            # Skip common non-skill files and SKILL.md (already processed above)
+            skip_files = {'README', 'THIRD_PARTY_NOTICES', 'agent_skills_spec', 'LICENSE', 'CHANGELOG', 'SKILL'}
+            for file_path in directory.glob("**/*.md"):
+                # Skip if filename (without .md) is in skip list or if it's a SKILL.md file
                 if file_path.stem not in skip_files:
                     try:
+                        # Build skill name from relative path (e.g., category/subcategory/skill)
+                        rel_path = file_path.relative_to(directory)
+                        # Remove .md extension and convert path separators to forward slashes
+                        skill_name = str(rel_path.with_suffix("")).replace("\\", "/")
+
                         metadata = self._extract_metadata(file_path, location)
-                        self._metadata_cache[metadata.name] = metadata
+                        # Override the name with the hierarchical path-based name
+                        metadata.name = skill_name
+                        self._metadata_cache[skill_name] = metadata
                     except Exception as e:
                         # Skip files with parse errors, log them
                         print(f"Warning: Failed to parse skill {file_path}: {e}")
