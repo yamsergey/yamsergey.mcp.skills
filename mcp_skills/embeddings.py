@@ -4,7 +4,6 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass
 import logging
 
 try:
@@ -15,29 +14,10 @@ try:
 except ImportError:
     EMBEDDINGS_AVAILABLE = False
 
+# Import SearchResult from skill_manager (shared between embeddings and keyword search)
+from .skill_manager import SearchResult
+
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class SearchResult:
-    """Result from embedding search"""
-    name: str
-    description: str
-    location: str
-    similarity_score: float  # 0-1, higher is better
-    tags: Optional[List[str]] = None
-    category: str = ""
-
-    def to_dict(self) -> dict:
-        """Convert to JSON-serializable dict"""
-        return {
-            "name": self.name,
-            "description": self.description,
-            "location": self.location,
-            "similarity_score": round(self.similarity_score, 3),
-            "tags": self.tags or [],
-            "category": self.category,
-        }
 
 
 class SkillEmbeddingSearch:

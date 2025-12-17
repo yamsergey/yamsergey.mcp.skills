@@ -68,6 +68,28 @@ class SkillMetadata:
         }
 
 
+@dataclass
+class SearchResult:
+    """Result from skill search (used by both embeddings and keyword search)"""
+    name: str
+    description: str
+    location: str
+    similarity_score: float  # 0-1, higher is better
+    tags: Optional[List[str]] = None
+    category: str = ""
+
+    def to_dict(self) -> dict:
+        """Convert to JSON-serializable dict"""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "location": self.location,
+            "similarity_score": round(self.similarity_score, 3),
+            "tags": self.tags or [],
+            "category": self.category,
+        }
+
+
 class SkillManager:
     """Manages skill discovery and loading"""
 
@@ -440,10 +462,8 @@ class SkillManager:
         tags: Optional[List[str]] = None,
         category: Optional[str] = None,
         location: Optional[str] = None,
-    ) -> List:
+    ) -> List[SearchResult]:
         """Fallback keyword search when embeddings not available"""
-        from .embeddings import SearchResult
-
         results = []
         query_lower = query.lower()
         query_words = set(query_lower.split())
