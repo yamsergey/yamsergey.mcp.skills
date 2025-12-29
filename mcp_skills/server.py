@@ -461,6 +461,9 @@ def main():
     # Load skill paths from config file or CLI arguments
     skills_path_objects = None
 
+    # Search description: CLI argument takes precedence over config file
+    search_description = args.search_description
+
     if args.config:
         # Load from config file
         try:
@@ -481,6 +484,10 @@ def main():
                             exclude_pattern=sp_data.get("exclude_pattern"),
                         )
                     )
+
+            # Load search_tool_description from config if not provided via CLI
+            if not search_description:
+                search_description = config.get("search_tool_description")
         except Exception as e:
             print(f"Error loading config file {args.config}: {e}", file=sys.stderr)
             sys.exit(1)
@@ -497,7 +504,7 @@ def main():
 
     server = SkillsServer(
         skills_paths=skills_path_objects,
-        search_tool_description=args.search_description,
+        search_tool_description=search_description,
     )
 
     asyncio.run(server.run())
