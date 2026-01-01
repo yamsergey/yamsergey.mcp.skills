@@ -9,7 +9,6 @@ import logging
 try:
     from sentence_transformers import SentenceTransformer
     import chromadb
-    from chromadb.config import Settings
     EMBEDDINGS_AVAILABLE = True
 except ImportError:
     EMBEDDINGS_AVAILABLE = False
@@ -67,13 +66,7 @@ class SkillEmbeddingSearch:
         persist_path.mkdir(parents=True, exist_ok=True)
 
         try:
-            settings = Settings(
-                chroma_db_impl="duckdb+parquet",
-                persist_directory=str(persist_path),
-                anonymized_telemetry=False,
-                allow_reset=True,
-            )
-            self.client = chromadb.Client(settings)
+            self.client = chromadb.PersistentClient(path=str(persist_path))
             logger.debug(f"Chroma database initialized at {persist_path}")
         except Exception as e:
             raise RuntimeError(f"Failed to initialize Chroma database: {e}")
